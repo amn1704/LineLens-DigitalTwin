@@ -1,36 +1,33 @@
 export const TOUR_STORAGE_KEY = "linelens.phase6.tour-seen";
-
-export type TourPage = "Dashboard" | "Quality" | "Incidents";
-
-export interface TourStep {
-  id: string;
-  page: TourPage;
-  target: string;
-  stationId?: string;
-  title: string;
-  text: string;
-  hint?: string;
-  scenario?: "bottleneck" | "quality";
-}
+export const GUIDE_STORAGE_KEY = "linelens.phase6.guide-progress";
+export type TourPage = "Dashboard" | "Machines" | "Quality" | "Incidents" | "Analytics" | "Alerts";
+export type Scenario = "bottleneck" | "quality";
+export interface TourStep { id: string; page: TourPage; target: string; stationId?: string; title: string; text: string; hint?: string; scenario?: Scenario; }
+export interface GuideChapter { id: string; label: string; page: TourPage; duration: string; summary: string; steps: readonly TourStep[]; }
 
 export const TOUR_STEPS: readonly TourStep[] = [
-  { id: "factory", page: "Dashboard", target: "factory-canvas", title: "Your live factory", text: "Vehicles move through Body, Paint and Final Assembly. LineLens keeps this digital model updated as production changes.", hint: "Drag to rotate · Scroll to zoom" },
-  { id: "sensor-gap", page: "Dashboard", target: "station-inspector", stationId: "FA-01", title: "Even when data is limited", text: "Not every machine has modern sensors. LineLens uses the data that is available and shows how confident it is." },
-  { id: "prediction", page: "Dashboard", target: "forecast-control", stationId: "FA-02", title: "See trouble before it spreads", text: "LineLens learns what is normal for each station. When a station begins slowing, it warns where the impact may appear next." },
-  { id: "impact", page: "Dashboard", target: "forecast-impact", stationId: "FA-02", scenario: "bottleneck", title: "See what may happen next", text: "Chassis Marriage is slowing. LineLens expects the queue to grow and downstream stations to run short of incoming vehicles." },
-  { id: "vehicle-memory", page: "Quality", target: "digital-build-record", title: "Every vehicle has a memory", text: "LineLens remembers which station, tool and batch built each vehicle—and what happened there." },
-  { id: "common-pattern", page: "Quality", target: "common-pattern", scenario: "quality", title: "Find what affected vehicles share", text: "Several risky vehicles passed through the same weld tool. That tells the quality team where to investigate first." },
-  { id: "response", page: "Incidents", target: "incident-response", title: "From warning to action", text: "LineLens brings the warning, affected vehicles and evidence into one place. The plant team stays in control and decides what to check next." },
+  { id:"factory", page:"Dashboard", target:"factory-canvas", title:"Your live factory", text:"Vehicles move through Body, Paint and Final Assembly. LineLens keeps this digital model updated as production changes.", hint:"Drag to rotate · Scroll to zoom" },
+  { id:"sensor-gap", page:"Dashboard", target:"station-inspector", stationId:"FA-01", title:"Even when data is limited", text:"Not every machine has modern sensors. LineLens uses the data that is available to estimate what is happening and shows how confident it is." },
+  { id:"prediction", page:"Dashboard", target:"station-inspector", stationId:"FA-02", title:"See trouble before it spreads", text:"LineLens learns what is normal for each station. When a station begins slowing, it can warn before the rest of the line is affected." },
+  { id:"impact", page:"Dashboard", target:"forecast-impact", stationId:"FA-02", scenario:"bottleneck", title:"See what may happen next", text:"Chassis Marriage is slowing. LineLens expects the queue to grow and downstream stations may run short of incoming vehicles." },
+  { id:"vehicle-memory", page:"Quality", target:"digital-build-record", title:"Every vehicle has a memory", text:"LineLens remembers where each vehicle was built, which tools touched it and what happened along the way." },
+  { id:"common-pattern", page:"Quality", target:"common-pattern", scenario:"quality", title:"Find what affected vehicles share", text:"Several risky vehicles passed through the same weld tool. That tells the quality team where to investigate first." },
+  { id:"response", page:"Incidents", target:"incident-response", title:"From warning to action", text:"LineLens brings the warning, affected equipment, vehicles and evidence into one place. The plant team stays in control and decides what to check next." },
 ] as const;
-
-export interface TourProgress {
-  step: number;
-  complete: boolean;
-}
-
-export const newTour = (): TourProgress => ({ step: 0, complete: false });
-export const nextTourStep = (progress: TourProgress): TourProgress =>
-  progress.step >= TOUR_STEPS.length - 1 ? { step: progress.step, complete: true } : { step: progress.step + 1, complete: false };
-export const previousTourStep = (progress: TourProgress): TourProgress => ({ step: Math.max(0, progress.step - 1), complete: false });
-export const hasSeenTour = (storage: Pick<Storage, "getItem">): boolean => storage.getItem(TOUR_STORAGE_KEY) === "1";
-export const rememberTour = (storage: Pick<Storage, "setItem">): void => storage.setItem(TOUR_STORAGE_KEY, "1");
+const step = (id:string,page:TourPage,target:string,title:string,text:string):TourStep => ({id,page,target,title,text});
+export const GUIDE_CHAPTERS: readonly GuideChapter[] = [
+ {id:"dashboard",label:"Dashboard",page:"Dashboard",duration:"~90 sec",summary:"Factory and predictions",steps:[step("factory-view","Dashboard","factory-canvas","Factory view","This is your production line. Vehicles move through Body, Paint and Final Assembly."),step("station-list","Dashboard","station-list","Station list","Choose any station to inspect it."),step("station-summary","Dashboard","station-inspector","Selected station","See current cycle, normal, difference, confidence and queue."),step("view-modes","Dashboard","forecast-control","Observed, Twin and Forecast","Observed is factory data. Twin is LineLens's best estimate now. Forecast is what may happen next."),step("warning","Dashboard","incident-summary","Early warning","One clear warning appears when LineLens sees a developing problem. Important warnings become Incidents.")]},
+ {id:"stations",label:"Stations",page:"Machines",duration:"~60 sec",summary:"Station health and data",steps:[step("directory","Machines","station-directory","Station directory","Compare all production stations in one place."),step("normal","Machines","station-directory","Current versus normal","See whether a station is behaving differently from normal."),step("source","Machines","station-directory","Data source","Direct data, partial data and basic data make evidence easy to understand."),step("estimate","Machines","station-directory","Twin estimate","For sensor-poor stations, LineLens fills the gap with an estimate and clearly shows confidence.")]},
+ {id:"quality",label:"Quality",page:"Quality",duration:"~90 sec",summary:"Vehicle risk and build history",steps:[step("vehicles","Quality","quality-vehicle-list","Vehicles to review","Vehicles needing attention rise to the top."),step("risk","Quality","quality-primary","Quality risk","This is the chance that a vehicle may need extra inspection."),step("why","Quality","quality-primary","Why and what to do","LineLens explains what looked unusual and recommends where to check. It does not act automatically."),step("history","Quality","digital-build-record","Build history","Every vehicle keeps a record of the stations, tools and batches it passed through."),step("pattern","Quality","common-pattern","Common pattern","When several risky vehicles share the same tool or process, LineLens shows it here."),step("validation","Quality","quality-validation","Validation","Later End-of-Line outcomes check whether an earlier warning was right.")]},
+ {id:"incidents",label:"Incidents",page:"Incidents",duration:"~75 sec",summary:"From warning to response",steps:[step("attention","Incidents","incident-list","Attention needed","Important predictions become Incidents."),step("what","Incidents","incident-response","What happened and next","See the current problem and expected impact first."),step("response","Incidents","incident-response-panel","Response tracking","Acknowledge, investigate, complete checks and resolve track the team's response. They do not control factory equipment.")]},
+ {id:"trends",label:"Trends",page:"Analytics",duration:"~60 sec",summary:"How the line changes",steps:[step("trend","Analytics","trends-page","Station trend","See how one station has changed over time."),step("data","Analytics","twin-cycle-chart","Factory data, Twin estimate and Normal","The chart separates direct factory data, LineLens's estimate and normal operation."),step("difference","Analytics","difference-chart","Difference from normal","Growing differences can be an early warning."),step("risk","Analytics","risk-chart","Slowdown risk","LineLens combines several signals instead of reacting to one slow cycle.")]},
+ {id:"events",label:"Event Log",page:"Alerts",duration:"~30 sec",summary:"Detailed factory history",steps:[step("log","Alerts","event-log","Event log","This is the detailed history of what happened in the factory."),step("important","Alerts","event-log","Important events","The default view prioritizes warnings, quality findings, incident activity and sensor issues."),step("incidents","Alerts","event-log","Events and Incidents","Events are raw signals. Important problems are grouped into Incidents.")]},
+] as const;
+export interface TourProgress { step:number; complete:boolean; }
+export const newTour=():TourProgress=>({step:0,complete:false});
+export const nextTourStep=(p:TourProgress):TourProgress=>p.step>=TOUR_STEPS.length-1?{step:p.step,complete:true}:{step:p.step+1,complete:false};
+export const previousTourStep=(p:TourProgress):TourProgress=>({step:Math.max(0,p.step-1),complete:false});
+export const hasSeenTour=(s:Pick<Storage,"getItem">)=>s.getItem(TOUR_STORAGE_KEY)==="1";
+export const rememberTour=(s:Pick<Storage,"setItem">)=>s.setItem(TOUR_STORAGE_KEY,"1");
+export const completedGuides=(s:Pick<Storage,"getItem">):string[]=>{try{return JSON.parse(s.getItem(GUIDE_STORAGE_KEY)??"[]");}catch{return [];}};
+export const rememberGuide=(s:Pick<Storage,"getItem"|"setItem">,id:string)=>{const next=[...new Set([...completedGuides(s),id])];s.setItem(GUIDE_STORAGE_KEY,JSON.stringify(next));return next;};

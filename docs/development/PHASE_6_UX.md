@@ -35,3 +35,11 @@ Reset Demo calls the normal simulator reset, clears prediction and incident serv
 ## Responsive behavior
 
 The desktop target is 1440×900. On narrower laptops, Quality moves its analysis cards below the vehicle story; at compact widths all three sections stack. The tour card remains inside the viewport and the primary application remains usable independently of the tour.
+
+## Guided learning
+
+**Quick Tour** remains the seven-step, judge-facing story: Live Factory, Limited Data, Early Warning, Future Impact, Vehicle History, Common Pattern, and Human Response. It uses the running simulator and real prediction/quality/incident pipeline; it never writes or overrides a calculated risk, affected-vehicle count, or incident.
+
+**Product Guide** is deliberately separate from the Quick Tour. The Tour menu offers a Full Product Tour or an individual chapter: Dashboard (5 steps), Stations (4), Quality (6), Incidents (3), Trends (4), and Event Log (3). Each chapter focuses the matching page and target, can be backed out of with Esc, and records only chapter IDs in local storage. The full sequence is resumable by opening a chapter again; no volatile vehicle or factory state is stored.
+
+The user-facing names are **Stations**, **Trends**, and **Event Log**. Internal route identifiers remain unchanged to avoid unnecessary platform risk. Event Log defaults to meaningful warnings, findings, incidents, and sensor issues; routine transfer noise does not dominate the page.

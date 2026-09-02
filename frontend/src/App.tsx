@@ -53,8 +53,9 @@ import {
   incidentAction,
 } from "./api";
 import { FactoryScene } from "./twin/FactoryScene";
-import { GuidedTour } from "./GuidedTour";
-import { TOUR_STEPS, hasSeenTour, rememberTour } from "./tour";
+import { GuidedTour, PageGuide, ProductGuideMenu } from "./GuidedTour";
+import { GUIDE_CHAPTERS, TOUR_STEPS, completedGuides, hasSeenTour, rememberGuide, rememberTour } from "./tour";
+import type { GuideChapter } from "./tour";
 import type {
   GenealogyAnalysis,
   HistoryPoint,
@@ -123,6 +124,11 @@ export default function App() {
   const [demoBusy, setDemoBusy] = useState(false);
   const [tourMode, setTourMode] = useState<"welcome" | "active" | "complete" | null>(null);
   const [tourStep, setTourStep] = useState(0);
+  const [guideMenuOpen, setGuideMenuOpen] = useState(false);
+  const [guideChapter, setGuideChapter] = useState<GuideChapter | null>(null);
+  const [guideStep, setGuideStep] = useState(0);
+  const [fullGuide, setFullGuide] = useState(false);
+  const [guideCompleted, setGuideCompleted] = useState<string[]>(() => completedGuides(window.localStorage));
   const tourWelcomeChecked = useRef(false);
   const tourScenarioRun = useRef(new Set<string>());
   const [view, setView] = useState<{ action: ViewAction; tick: number }>({
@@ -374,6 +380,13 @@ export default function App() {
       setSelectedIncident(incidents.find((incident) => incident.type === "QUALITY") ?? incidents[0]);
     }
   }, [incidents, tourMode, tourStep]);
+  useEffect(() => {
+    if (!guideChapter) return;
+    setActiveTab(guideChapter.page as Tab);
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { setGuideChapter(null); setFullGuide(false); } };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [guideChapter]);
 
   const selected = useMemo(
     () =>
@@ -389,6 +402,11 @@ export default function App() {
     setSelectedId(id);
     setSelectedVehicle(null);
     setActiveTab("Dashboard");
+  };
+  const changeQualityFilter = (filter: "REVIEW" | "WATCH" | "INSPECT" | "ALL") => {
+    setQualityFilter(filter);
+    const available = qualityVehicles.filter((vehicle) => filter === "ALL" ? true : filter === "INSPECT" ? vehicle.risk >= .6 : filter === "WATCH" ? vehicle.risk >= .35 && vehicle.risk < .6 : vehicle.risk >= .35);
+    setSelectedQualityVehicle((current) => available.find((vehicle) => vehicle.vehicle_id === current?.vehicle_id) ?? available[0] ?? current);
   };
   const control = async (action: "reset" | "pause" | "resume") => {
     try {
@@ -492,6 +510,8 @@ export default function App() {
     setActiveTab("Dashboard");
     setSelectedId("FA-02");
     setDataView("twin");
+    setCameraMode("orbit");
+    commandView("reset");
     try {
       const healthy = await simulationControl("reset");
       setState(healthy);
@@ -499,15 +519,25 @@ export default function App() {
       setSelectedIncident(null);
     } catch { setError("Unable to reset the quick tour demonstration."); }
   };
-  const skipTour = () => {
+  const skipTour = async () => {
     rememberTour(window.localStorage);
+    tourScenarioRun.current.clear();
     setTourMode(null);
+    setActiveTab("Dashboard");
+    setDataView("twin");
+    setCameraMode("orbit");
+    commandView("reset");
+    try { setState(await simulationControl("reset")); } catch { setError("Unable to return to the healthy demonstration."); }
   };
   const nextTour = () => {
     if (tourStep >= TOUR_STEPS.length - 1) {
       rememberTour(window.localStorage);
       setTourMode("complete");
-    } else setTourStep((current) => current + 1);
+    } else {
+      const next = TOUR_STEPS[tourStep + 1];
+      if (next.scenario && !tourScenarioRun.current.has(next.scenario)) setDemoBusy(true);
+      setTourStep((current) => current + 1);
+    }
   };
   const exploreAfterTour = async () => {
     rememberTour(window.localStorage);
@@ -520,6 +550,28 @@ export default function App() {
     rememberTour(window.localStorage);
     setTourMode(null);
     void executeDemo(kind);
+  };
+  const startGuideChapter = (chapter: GuideChapter, chain = false) => {
+    setGuideMenuOpen(false);
+    setFullGuide(chain);
+    setGuideStep(0);
+    setGuideChapter(chapter);
+    setActiveTab(chapter.page as Tab);
+    setMoreOpen(false);
+  };
+  const finishGuideStep = () => {
+    if (!guideChapter) return;
+    if (guideStep < guideChapter.steps.length - 1) { setGuideStep((current) => current + 1); return; }
+    const completed = rememberGuide(window.localStorage, guideChapter.id);
+    setGuideCompleted(completed);
+    if (fullGuide) {
+      const index = GUIDE_CHAPTERS.findIndex((item) => item.id === guideChapter.id);
+      const next = GUIDE_CHAPTERS[index + 1];
+      if (next) { startGuideChapter(next, true); return; }
+    }
+    setGuideChapter(null);
+    setFullGuide(false);
+    setGuideMenuOpen(true);
   };
   const selectedAssessment =
     prediction?.assessments.find((item) => item.station_id === selected.id) ??
@@ -607,7 +659,7 @@ export default function App() {
             )}
           </button>
           {(state.simulation.active_scenario || state.simulation.quality_scenario_active) && <span className="demo-active-badge">Demo active · {state.simulation.quality_scenario_active ? "Weld quality issue" : "Bottleneck"}</span>}
-          <button className="header-action" onClick={() => setTourMode("welcome")}><HelpCircle size={14}/> Tour</button>
+          <button className="header-action" onClick={() => setGuideMenuOpen(true)}><HelpCircle size={14}/> Tour</button>
           <button className="header-action" onClick={() => setDemoOpen(true)}><FlaskConical size={14}/> Demo</button>
         </div>
       </header>
@@ -633,9 +685,9 @@ export default function App() {
         <div className="more-nav">
           <button className={["Machines","Analytics","Alerts"].includes(activeTab) ? "active" : ""} onClick={() => setMoreOpen((open) => !open)}><Menu size={15}/> More <ChevronDown size={13}/></button>
           {moreOpen && <div className="more-menu">
-            <button onClick={() => { setActiveTab("Machines"); setMoreOpen(false); }}><List size={14}/> Machines</button>
-            <button onClick={() => { setActiveTab("Analytics"); setMoreOpen(false); }}><ChartLine size={14}/> Analytics</button>
-            <button onClick={() => { setActiveTab("Alerts"); setMoreOpen(false); }}><Bell size={14}/> Alerts</button>
+            <button onClick={() => { setActiveTab("Machines"); setMoreOpen(false); }}><List size={14}/> Stations</button>
+            <button onClick={() => { setActiveTab("Analytics"); setMoreOpen(false); }}><ChartLine size={14}/> Trends</button>
+            <button onClick={() => { setActiveTab("Alerts"); setMoreOpen(false); }}><Bell size={14}/> Event Log</button>
             <button onClick={() => { setValidationOpen(true); setMoreOpen(false); }}><CheckCircle2 size={14}/> About / Validation</button>
           </div>}
         </div>
@@ -885,14 +937,16 @@ export default function App() {
           metrics={qualityMetrics}
           scenario={qualityScenario}
           filter={qualityFilter}
-          onFilter={setQualityFilter}
+          onFilter={changeQualityFilter}
           incident={selectedQualityVehicle ? incidents.find((item) => item.affected_vehicles.some((vehicle) => vehicle.vehicle_id === selectedQualityVehicle.vehicle_id)) ?? null : null}
           onOpenIncident={openIncident}
         />
       )}
       {demoOpen && <DemoDrawer busy={demoBusy} activeScenario={state.simulation.active_scenario !== null} qualityActive={state.simulation.quality_scenario_active} speed={state.simulation.speed} onClose={() => setDemoOpen(false)} onRun={(kind) => void executeDemo(kind)} onSensorLoss={() => { setDemoOpen(false); setActiveTab("Dashboard"); setSelectedId("FA-01"); void testCondition("FA-01", { drop: true }); }} onReset={() => { setDemoOpen(false); void control("reset"); }} onSpeed={speed} />}
       {validationOpen && <ValidationDrawer state={state} quality={qualityMetrics} prediction={prediction} onClose={() => setValidationOpen(false)} />}
-      <GuidedTour mode={tourMode} step={tourStep} busy={demoBusy} onStart={() => void beginTour()} onBack={() => setTourStep((current) => Math.max(0, current - 1))} onNext={nextTour} onSkip={skipTour} onExplore={() => void exploreAfterTour()} onDemo={runDemoFromTour} />
+      <GuidedTour mode={tourMode} step={tourStep} busy={demoBusy} onStart={() => void beginTour()} onBack={() => setTourStep((current) => Math.max(0, current - 1))} onNext={nextTour} onSkip={() => void skipTour()} onExplore={() => void exploreAfterTour()} onLearn={() => { setTourMode(null); setGuideMenuOpen(true); }} onDemo={runDemoFromTour} />
+      {guideMenuOpen && <ProductGuideMenu completed={guideCompleted} onQuick={() => { setGuideMenuOpen(false); setTourMode("welcome"); }} onFull={() => startGuideChapter(GUIDE_CHAPTERS[0], true)} onChapter={(chapter) => startGuideChapter(chapter)} onClose={() => setGuideMenuOpen(false)} />}
+      {guideChapter && <PageGuide chapter={guideChapter} step={guideStep} onBack={() => setGuideStep((current) => Math.max(0, current - 1))} onNext={finishGuideStep} onExit={() => { setGuideChapter(null); setFullGuide(false); }} />}
     </main>
   );
 }
@@ -1139,7 +1193,7 @@ function StationList({
   prediction: PredictionState | null;
 }) {
   return (
-    <aside className="station-sidebar">
+    <aside data-tour="station-list" className="station-sidebar">
       <div className="sidebar-title">
         <span>Stations</span>
         <b>{stations.length}</b>
@@ -1189,7 +1243,7 @@ function StationList({
       </div>
       <section className="recent-events">
         <h2>Recent events</h2>
-        {events.slice(0, 4).map((event) => (
+        {events.slice(0, 3).map((event) => (
           <Event key={event.event_id} event={event} />
         ))}
       </section>
@@ -1229,7 +1283,7 @@ function IncidentsView({
   const formatTime = (seconds: number | null) => seconds === null ? "—" : seconds < 60 ? `${Math.round(seconds)} sec` : `${(seconds / 60).toFixed(1)} min`;
   return (
     <section className="incidents-layout">
-      <aside className="incidents-list">
+      <aside data-tour="incident-list" className="incidents-list">
         <div className="sidebar-title"><div><span>Attention needed</span><small>{filter === "ACTIVE" ? `${incidents.length} active incidents` : `${incidents.length} resolved incidents`}</small></div><b>{incidents.length}</b></div>
         <div className="quality-filters"><button className={filter === "ACTIVE" ? "active" : ""} onClick={() => onFilter("ACTIVE")}>ACTIVE</button><button className={filter === "RESOLVED" ? "active" : ""} onClick={() => onFilter("RESOLVED")}>RESOLVED</button></div>
         <div className="incident-list-scroll">
@@ -1252,7 +1306,7 @@ function IncidentsView({
           <details className="app-details incident-technical"><summary>Prediction and response details <ChevronDown size={14}/></summary><section><div className="twin-section-title"><span>Response metrics</span></div><div className="incident-metrics"><Operation label="Detection lead" value={formatTime(active.response_metrics.detection_lead_time_seconds)} /><Operation label="Acknowledged" value={formatTime(active.response_metrics.acknowledgement_seconds)} /><Operation label="Investigation" value={formatTime(active.response_metrics.investigation_seconds)} /><Operation label="Resolution" value={formatTime(active.response_metrics.resolution_seconds)} /><Operation label="Vehicles exposed" value={active.response_metrics.vehicles_exposed.toString()} /></div></section><section className="incident-outcome"><div className="twin-section-title"><span>Predicted vs actual</span></div><small>Predicted impact: {active.outcome.predicted_impact_happened === null ? "awaiting confirmation" : active.outcome.predicted_impact_happened ? "observed" : "not observed"}.</small><small>Inspection finding: {active.outcome.suspected_factor_confirmed === null ? "awaiting engineering confirmation" : active.outcome.suspected_factor_confirmed ? "confirmed" : "not confirmed"}.</small><small>Process recovery: {active.outcome.process_returned_toward_baseline === null ? "not recorded" : active.outcome.process_returned_toward_baseline ? "returned toward normal" : "not yet returned toward normal"}.</small></section></details>
           <section className="incident-timeline"><div className="twin-section-title"><span>Timeline</span></div>{active.timeline.map((entry, index) => <div key={`${entry.timestamp}-${index}`}><time>{clock(entry.timestamp)}</time><span><b>{entry.kind === "USER" ? entry.actor : "LineLens"}</b><small>{entry.message}</small></span></div>)}</section>
         </aside>
-      </> : <section className="incident-healthy"><CheckCircle2 size={36}/><span>No active incidents</span><h1>Factory operating within expected conditions.</h1><p>LineLens is monitoring production and vehicle quality.</p></section>}
+      </> : <section className="incident-healthy"><CheckCircle2 size={38}/><span>NO ACTIVE INCIDENTS</span><h1>The factory is operating within expected conditions.</h1><p>There is nothing for the team to action right now. LineLens continues to watch the line in the background.</p><div className="healthy-watch-list"><div><b>Station performance</b><small>Cycle time, queues and flow changes</small></div><div><b>Vehicle quality</b><small>Build history and inspection risk</small></div><div><b>Data availability</b><small>Confidence when sensor coverage is limited</small></div></div><small className="healthy-hint">To see the response workflow, use a synthetic scenario from <b>Demo</b>. It never controls factory equipment.</small></section>}
     </section>
   );
 }
@@ -1284,14 +1338,14 @@ function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehic
       <div className="quality-filters">{(["REVIEW","INSPECT","WATCH","ALL"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => onFilter(item)}>{item === "REVIEW" ? "TO REVIEW" : item === "ALL" ? "ALL VEHICLES" : item}</button>)}</div>
       <div className="quality-scroll">{filtered.length === 0 ? <div className="quality-empty"><Shield size={24}/><p>No vehicles need review</p><small>Use All vehicles to inspect the full monitored population.</small></div> : filtered.map((vehicle) => <button key={vehicle.vehicle_id} className={`quality-row ${selectedVehicle?.vehicle_id === vehicle.vehicle_id ? "selected" : ""}`} onClick={() => onSelectVehicle(vehicle)}><div className="quality-risk-indicator" style={{backgroundColor: vehicle.risk >= .6 ? "#e07b35" : vehicle.risk >= .35 ? "#d89a3b" : "#4f85a6"}}/><div className="quality-vehicle-info"><strong>{vehicle.vehicle_id}</strong><small>{vehicle.current_station}</small></div><div className="quality-risk-score"><b>{Math.round(vehicle.risk * 100)}%</b><small>{vehicle.risk >= .6 ? "INSPECT" : vehicle.risk >= .35 ? "WATCH" : "OK"}</small></div></button>)}</div>
     </aside>
-    <section className="quality-detail">
+    <section data-tour="quality-primary" className="quality-detail">
       {selectedVehicle && qualityRecord && prediction && (selectedVehicle.risk >= .35 || filter === "ALL") ? <div className="quality-vehicle-detail">
         <header className="quality-simple-heading"><div><span>Vehicle quality</span><h1>{selectedVehicle.vehicle_id}</h1><small>{selectedVehicle.variant || "Vehicle"} · {selectedVehicle.current_station}</small></div><div className={`quality-risk-hero ${prediction.risk >= .6 ? "inspect" : prediction.risk >= .35 ? "watch" : "normal"}`} title="Chance that this vehicle may need extra inspection."><span>Quality risk</span><b>{Math.round(prediction.risk * 100)}%</b><small>{prediction.risk >= .6 ? "Inspect" : prediction.risk >= .35 ? "Watch" : "Within normal range"}</small></div></header>
         <section className="quality-story"><div><span>Why?</span><b>{prediction.risk >= .35 ? "Weld process looked abnormal earlier." : "No unusual production pattern found."}</b><small>{prediction.evidence[0]?.value ?? "Production evidence is within the normal range."}</small></div><div><span>Likely origin</span><b>{prediction.likely_origin_station === "BIW-02" ? "Robotic Weld" : prediction.likely_origin_station ?? "No likely origin"}</b><small>Suspected only until inspection confirms it.</small></div><div className="quality-what-to-do"><span>What to do</span><b>{prediction.risk >= .6 ? "Inspect this vehicle before the next major process." : prediction.risk >= .35 ? "Watch this vehicle through the next process." : "Continue standard inspection."}</b><small>Location: {prediction.recommended_inspection_point ?? "Standard End-of-Line"}<br/>Reason: {prediction.risk >= .35 ? "Earlier weld data looks abnormal." : "No extra inspection signal."}</small></div></section>
         {incident && <button className="incident-context-link" onClick={() => onOpenIncident(incident)}>Part of quality incident · {incident.incident_id}<span>Open incident</span></button>}
         <BuildRecord record={qualityRecord} currentStation={selectedVehicle.current_station}/>
         <details className="app-details technical-quality"><summary>View technical evidence <ChevronDown size={14}/></summary><div className="quality-grid"><Operation label="Confidence" value={`${Math.round(prediction.confidence * 100)}%`}/><Operation label="Inspection point" value={prediction.recommended_inspection_point ?? "Standard EOL"}/><Operation label="Model" value={prediction.model_version}/><Operation label="Predictions retained" value={qualityRecord.prediction_history.length.toString()}/></div><div className="risk-sequence">{qualityRecord.prediction_history.map((item) => <div key={`${item.station_at_prediction}-${item.prediction_timestamp}`} className={item.risk >= .6 ? "inspect" : item.risk >= .35 ? "watch" : "normal"}><i style={{height:`${Math.max(8,item.risk*44)}px`}}/><small>{item.station_at_prediction}</small><b>{Math.round(item.risk*100)}%</b></div>)}</div>{qualityRecord.inspection_result && <div className={`inspection-result ${qualityRecord.inspection_result.result.startsWith("FAIL") ? "failed" : "passed"}`}><span>End-of-Line outcome</span><b>{qualityRecord.inspection_result.result}</b></div>}</details>
-      </div> : <div className="quality-empty-detail"><Shield size={32}/><p>{reviewCount ? "Select a vehicle to review" : "No urgent quality review"}</p><small>LineLens is still monitoring every vehicle.</small></div>}
+      </div> : <div className="quality-empty-detail"><Shield size={32}/><span>QUALITY OVERVIEW</span><p>{reviewCount ? "Select a vehicle to review" : "No vehicle needs extra inspection right now."}</p><small>{qualityVehicles.length ? `LineLens is monitoring ${qualityVehicles.length} active vehicle${qualityVehicles.length === 1 ? "" : "s"}.` : "LineLens is waiting for vehicles to enter the quality workflow."}</small>{qualityVehicles.length > 0 && <button className="calm-action" onClick={() => onFilter("ALL")}>View all monitored vehicles</button>}<small className="calm-note">A calm screen is a result, not a missing result. New quality findings will appear here when evidence warrants attention.</small></div>}
     </section>
     <aside className="quality-right quality-simple-right">
       {scenario?.active && <div className="demo-active-small"><i/>Demo active · Weld quality issue</div>}
@@ -2140,24 +2194,24 @@ function MachinesView({
   onSelect: (id: string) => void;
 }) {
   return (
-    <section className="simple-page">
+    <section data-tour="station-directory" className="simple-page">
       <div>
-        <span>Twin station directory</span>
-        <h1>Automotive stations</h1>
+        <span>Station directory</span>
+        <h1>Production stations</h1>
         <p>
           {dataView !== "observed"
-            ? "Estimated state combines synthetic telemetry, topology, and station-specific history."
-            : "Observed view shows only direct synthetic telemetry, PLC, conveyor, and MES-style evidence."}
+            ? "Compare current behaviour with normal operation and see how strong the available evidence is."
+            : "Observed view shows only the factory signals received directly."}
         </p>
       </div>
       <div className="machine-table twin-machine-table">
         <div className="machine-head">
           <span>Station</span>
           <span>Source</span>
-          <span>Observed</span>
+          <span>Factory data</span>
           <span>Twin</span>
-          <span>Expected</span>
-          <span>Residual</span>
+          <span>Normal</span>
+          <span>Difference</span>
           <span>Confidence</span>
         </div>
         {stations.map((station) => {
@@ -2229,14 +2283,13 @@ function AnalyticsView({
 }) {
   const recent = history.slice(-28);
   return (
-    <section className="simple-page analytics-page">
+    <section data-tour="trends-page" className="simple-page analytics-page">
       <div className="analytics-heading">
         <div>
-          <span>Twin history</span>
-          <h1>Observed, estimated, expected</h1>
+          <span>Station trends</span>
+          <h1>How this station is changing</h1>
           <p>
-            One station's evolving prototype twin state over the current
-            synthetic shift.
+            Factory data, LineLens's Twin estimate and normal behaviour over time.
           </p>
         </div>
         <label>
@@ -2301,7 +2354,7 @@ function RiskTrendChart({
     )
     .join(" ");
   return (
-    <section className="risk-chart-card">
+    <section data-tour="risk-chart" className="risk-chart-card">
       <div>
         <span>Bottleneck risk</span>
         <strong>
@@ -2383,7 +2436,7 @@ function TwinCycleChart({ station }: { station: Station }) {
       )
       .join(" ");
   return (
-    <section className="twin-chart-card">
+    <section data-tour="twin-cycle-chart" className="twin-chart-card">
       <div className="twin-chart-head">
         <div>
           <span>{station.name}</span>
@@ -2471,7 +2524,7 @@ function ResidualTrendChart({ station }: { station: Station }) {
         ? "#2988a0"
         : "#6d8390";
   return (
-    <section className="residual-chart-card">
+    <section data-tour="difference-chart" className="residual-chart-card">
       <div className="residual-chart-head">
         <div>
         <span>Difference from normal</span>
@@ -2550,6 +2603,7 @@ function EventsView({
   forecastAlerts: ForecastAlert[];
   validation: ForecastValidation | null;
 }) {
+  const [eventFilter, setEventFilter] = useState<"IMPORTANT" | "ALL">("IMPORTANT");
   const combined = [
     ...forecastAlerts.map((alert) => ({
       event_id: alert.alert_id,
@@ -2561,18 +2615,21 @@ function EventsView({
     })),
     ...events.map((event) => ({ ...event, forecast: false })),
   ].sort((a, b) => b.simulation_time - a.simulation_time);
+  const visibleEvents = eventFilter === "IMPORTANT"
+    ? combined.filter((event) => event.forecast || event.severity !== "INFO")
+    : combined;
   return (
-    <section className="simple-page">
+    <section data-tour="event-log" className="simple-page">
       <div>
-        <span>Operational log</span>
-        <h1>Live events</h1>
+          <span>Detailed factory history</span>
+          <h1>Event Log</h1>
         <p>
-          Operational events and deduplicated simulation-derived forecast
-          alerts.
+          Important events first: warnings, quality findings, incidents and sensor issues.
         </p>
       </div>
+      <div className="event-filter" aria-label="Event Log filter"><button className={eventFilter === "IMPORTANT" ? "active" : ""} onClick={() => setEventFilter("IMPORTANT")}>IMPORTANT</button><button className={eventFilter === "ALL" ? "active" : ""} onClick={() => setEventFilter("ALL")}>ALL EVENTS</button></div>
       <div className="events-log">
-        {combined.map((event) => (
+        {visibleEvents.length === 0 ? <div className="event-log-empty"><CheckCircle2 size={28}/><b>No important events yet</b><small>Routine vehicle movement is available under All events. Important warnings will appear here automatically.</small></div> : visibleEvents.map((event) => (
           <article key={event.event_id}>
             <i className={event.severity.toLowerCase()} />
             <time>{clock(event.simulation_time)}</time>
