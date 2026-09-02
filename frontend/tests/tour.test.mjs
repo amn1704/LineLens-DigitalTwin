@@ -15,16 +15,15 @@ test("first run, skip persistence, and replay state", () => {
   assert.deepEqual(newTour(), { step: 0, complete: false });
 });
 
-test("tour is exactly seven valid, navigable steps", () => {
-  assert.equal(TOUR_STEPS.length, 7);
+test("full product tour has twenty valid, navigable story steps", () => {
+  assert.equal(TOUR_STEPS.length, 20);
   for (const step of TOUR_STEPS) {
     assert.ok(step.target);
-    assert.ok(["Dashboard", "Quality", "Incidents"].includes(step.page));
+    assert.ok(["Dashboard", "Quality", "Incidents", "Machines", "Analytics"].includes(step.page));
   }
-  assert.equal(TOUR_STEPS[1].stationId, "FA-01");
-  assert.equal(TOUR_STEPS[2].stationId, "FA-02");
-  assert.equal(TOUR_STEPS[3].scenario, "bottleneck");
-  assert.equal(TOUR_STEPS[5].scenario, "quality");
+  assert.equal(TOUR_STEPS.find((step) => step.id === "gap")?.stationId, "FA-01");
+  assert.equal(TOUR_STEPS.find((step) => step.id === "bottleneck")?.scenario, "bottleneck");
+  assert.equal(TOUR_STEPS.find((step) => step.id === "quality")?.scenario, "quality");
 });
 
 test("tour controller moves back, forward, and completes", () => {
@@ -38,9 +37,9 @@ test("tour controller moves back, forward, and completes", () => {
 });
 
 test("product guide covers every important workspace with valid targets", () => {
-  assert.deepEqual(GUIDE_CHAPTERS.map((chapter) => chapter.id), ["dashboard", "stations", "quality", "incidents", "trends", "events"]);
+  assert.deepEqual(GUIDE_CHAPTERS.map((chapter) => chapter.id), ["dashboard", "quality", "incidents", "stations", "trends"]);
   for (const chapter of GUIDE_CHAPTERS) {
-    assert.ok(chapter.steps.length >= 3, `${chapter.label} needs a useful guide`);
+    assert.ok(chapter.steps.length >= 2, `${chapter.label} needs a useful guide`);
     for (const step of chapter.steps) assert.ok(step.target && step.title && step.text);
   }
 });

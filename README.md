@@ -2,339 +2,130 @@
 
 **See problems earlier. Trace quality issues faster.**
 
-LineLens is an evolving digital twin for automotive assembly lines. It helps
-plant teams understand what is happening now, see where a problem may spread
-next, trace quality risks across vehicles, and respond earlier — even when
-some machines have limited sensor data.
+![LineLens factory dashboard](assets/screenshots/dashboard-overview.png)
 
-Built as a working prototype for the
-[Accenture Innovation Challenge 2026 — DigitalTwin.ai](https://www.accenture.com).
+LineLens is a digital twin for vehicle assembly lines. It combines uneven factory data into an evolving view of production, predicts how developing bottlenecks may affect the line, tracks vehicle-level quality risk, identifies shared upstream patterns, and turns important warnings into human-led incidents.
 
-<!-- Optional repository hero image: assets/screenshots/dashboard-overview.png -->
+This is a working prototype for the Accenture Innovation Challenge 2026. Its data is synthetic by design: LineLens demonstrates a transparent decision-support method and never represents a connection to a real plant or control system.
 
----
+## The Problem
 
-## What This Repository Contains
+Assembly teams often have fragmented station data, late quality findings, and limited time to see how a small slowdown may spread. A useful digital twin must make the current situation understandable, explain uncertainty, connect a vehicle to its build history, and give people evidence before they decide what to investigate.
 
-This repository contains the complete LineLens prototype: a React/Three.js
-factory interface, a FastAPI simulation and Twin service, bottleneck and quality
-prediction workflows, incident response, validation views, and built-in guided
-learning. It is designed to run locally as a demonstrable prototype; it does
-not connect to a real factory or control industrial equipment.
+## The LineLens Approach
 
----
+LineLens models an 11-station automotive line across Body Shop, Paint Shop, and Final Assembly. It:
 
-## What LineLens Does
+- keeps an updated Twin estimate even when sensor coverage is limited;
+- detects persistent station slowdowns rather than reacting to a single unusual cycle;
+- runs a no-intervention forecast to show likely queue, starvation, and throughput effects;
+- maintains a vehicle Digital Build Record with station, tool, lot, and process evidence;
+- identifies common factors shared by risky vehicles without claiming automatic root cause; and
+- brings meaningful warnings into an incident workflow where the plant team remains in control.
 
-### Live Factory Twin
+## Product Tour
 
-LineLens maintains a live digital model of an 11-station automotive assembly
-line. Vehicles move through Body Shop, Paint Shop, and Final Assembly. Each
-station learns its own healthy operating fingerprint and continuously compares
-current behavior against that baseline.
+The in-product **Full Product Tour** tells the complete LineLens story in about five minutes, from factory view to station evidence, forecast, incident response, vehicle quality, common patterns, and validation. It uses the real local simulation pipelines and can be closed at any time.
 
-Not every station has the same instrumentation. LineLens works with three
-levels of sensor coverage — full telemetry, limited telemetry, and basic
-signals — and makes clear how confident each estimate is.
+Each major workspace also has a focused **Guide this page** walkthrough.
 
-### Early Bottleneck Warning
+## Screenshots
 
-When a station starts slowing beyond its normal range, LineLens raises a
-bottleneck risk score based on persistent deviation, takt pressure, queue
-growth, and completion-rate changes. Each risk assessment includes the specific
-evidence behind it.
+| Factory overview | Quality investigation |
+|---|---|
+| ![Factory overview](assets/screenshots/dashboard-overview.png) | ![Quality investigation](assets/screenshots/quality-investigation.png) |
 
-### Forward Prediction
-
-A disposable copy of the current twin state runs forward in simulated time
-to show what would happen if nothing changes. The forecast view shows expected
-queue growth, upstream blocking, downstream starvation, and throughput impact
-at +2, +5, +10, and +15 minute horizons.
-
-### Vehicle Quality Twin
-
-Every vehicle carries a digital build record — which station, tool, batch,
-and conditions it passed through. LineLens uses this record to predict quality
-risk before the vehicle reaches end-of-line inspection.
-
-When multiple risky vehicles share a common upstream factor (same weld tool,
-same equipment batch), LineLens identifies the shared pattern so the quality
-team knows where to look first.
-
-### Incident Response
-
-Production bottleneck warnings and vehicle quality concerns are consolidated
-into structured incidents with evidence, affected assets, affected vehicles,
-recommended checks, and a human workflow (acknowledge → investigate → resolve).
-Incidents are decision-support tools — they never write to PLCs, stop machines,
-or alter the physical process.
-
-### Built-In Validation
-
-LineLens compares its predictions against actual outcomes. Bottleneck forecasts
-are validated at +2, +5, and +10 minute checkpoints. Quality predictions are
-validated against synthetic inspection results. The About / Validation panel
-reports prediction lead time, forecast accuracy, and quality detection metrics.
-
-### Guided Learning
-
-A 7-step spotlight walkthrough introduces the product in under 90 seconds:
-live factory → sensor gaps → early warning → future impact → vehicle history →
-common patterns → incident response.
-
-The in-product **Tour** menu also includes a Full Product Tour and short,
-independent guides for Dashboard, Stations, Quality, Incidents, Trends, and
-Event Log. This keeps the first experience simple while preserving detail for
-users who want to learn a specific workspace.
-
----
+| Incident response | Station trends |
+|---|---|
+| ![Incident response](assets/screenshots/incident-response.png) | ![Station trends](assets/screenshots/station-trends.png) |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A["Synthetic Factory<br/>11 Stations"] --> B["Observation Layer<br/>Full · Limited · Basic"]
-    B --> C["Twin Estimator<br/>EWMA Baselines"]
-    C --> D["Twin State"]
-    D --> E["Bottleneck<br/>Prediction"]
-    D --> F["Vehicle Quality<br/>Twin"]
-    E --> G["Forward Twin<br/>No-Intervention Forecast"]
-    E --> H["Incident Engine"]
+    A[Synthetic factory telemetry] --> B[Observation layer]
+    B --> C[Twin estimator]
+    C --> D[Current factory state]
+    D --> E[Bottleneck prediction]
+    D --> F[Vehicle quality twin]
+    E --> G[No-intervention forecast]
+    E --> H[Incident workflow]
     F --> H
-    H --> I["Plant Team"]
-    A --> J["Actual Outcomes"]
-    G --> K["Validation"]
-    F --> K
-    J --> K
+    G --> I[Validation]
+    F --> I
+    H --> J[Plant team]
 ```
 
-See [docs/architecture.md](docs/architecture.md) for detailed technical documentation.
+Read the [architecture](docs/architecture.md), [validation method](docs/validation.md), and [prototype assumptions](docs/prototype-assumptions.md) for product-focused detail.
 
----
+## Key Capabilities
 
-## Station Topology
+### Factory Twin and Confidence
 
-| ID | Station | Shop | Process | Sensor Coverage |
-|---|---|---|---|---|
-| BIW-01 | Body Framing Cell | Body Shop | Frame and clamp | Full |
-| BIW-02 | Robotic Weld Cell | Body Shop | Spot welding | Full |
-| BIW-03 | Underbody Cell | Body Shop | Underbody joining | Limited |
-| PAINT-01 | Pretreatment Tunnel | Paint Shop | Surface preparation | Basic |
-| PAINT-02 | Paint Booth | Paint Shop | Base coat application | Full |
-| PAINT-03 | Curing Oven | Paint Shop | Thermal cure | Limited |
-| FA-01 | Trim Station | Final Assembly | Interior trim | Basic |
-| FA-02 | Chassis Marriage | Final Assembly | Powertrain integration | Full |
-| FA-03 | Wheel & Torque | Final Assembly | Wheel fastening | Full |
-| FA-04 | ADAS Calibration | Final Assembly | Sensor calibration | Full |
-| FA-05 | End-of-Line Inspection | Final Assembly | Final functional test | Limited |
+The Dashboard differentiates between **Observed** telemetry, the current **Twin** estimate, and a **Forecast**. Confidence is shown close to the evidence it describes. The viewport includes Orbit, immersive Walk Mode, and Factory Flythrough.
 
-Two accumulation buffers separate the shops: **Body Shop Exit Accumulator**
-(Underbody → Pretreatment, capacity 4) and **Painted Body Storage**
-(Curing Oven → Trim, capacity 5).
+### Early Bottleneck Prediction
 
-Sensor coverage is intentionally uneven. This is a design choice — real plants
-have mixed instrumentation, and LineLens demonstrates that useful estimation
-and prediction can work with incomplete data.
+The prediction service examines persistent cycle-time deviation, queue behaviour, takt pressure, and completion-rate changes. Forecasts use a disposable copy of the current Twin state and report real computed outputs from the local simulator.
 
----
+### Vehicle Quality Intelligence
 
-## Tech Stack
+LineLens maintains vehicle build history and produces inspection risk before End-of-Line confirmation. When several risky vehicles share a tool, cell, or lot, the Common Pattern view identifies the lead for engineering investigation—never a confirmed root cause.
 
-| Layer | Technology |
-|---|---|
-| 3D Visualization | Three.js via React Three Fiber |
-| Frontend | React 18 · TypeScript · Vite |
-| UI Icons | Lucide React |
-| Backend API | FastAPI · Python 3.11+ |
-| Simulation | NumPy · pandas |
-| Quality Model | scikit-learn |
-| Testing | pytest · Node test runner |
+### Human-Led Incidents
 
----
+Incidents gather what happened, expected impact, evidence, affected assets and vehicles, recommended checks, owner, and response window. Acknowledge, investigate, note, and resolve actions record workflow only; they do not control equipment.
 
-## Running Locally
+## Run Locally
 
-### Prerequisites
-
-- **Python 3.11+**
-- **Node.js 20+**
-- **npm**
-
-### Backend
+Prerequisites: Python 3.11+, Node.js 20+, and npm.
 
 ```bash
+# terminal 1
 cd backend
 python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-
+.venv\Scripts\activate          # Windows
 pip install -r requirements.txt
 uvicorn app.main:app --host 127.0.0.1 --port 8102
-```
 
-The API will be available at `http://127.0.0.1:8102`.
-
-### Frontend
-
-```bash
+# terminal 2
 cd frontend
 npm install
 npm run dev
 ```
 
-The application will be available at the local URL printed by Vite (normally
-`http://localhost:5173`).
+Open the local Vite URL. The frontend proxies `/api` to the backend on port 8102.
 
-The Vite dev server proxies `/api` requests to the backend at port 8102.
-
-### Verify
-
-Open the local URL printed by Vite in a browser. You should see the 3D factory
-with vehicles moving through stations. The twin synchronization indicator
-in the header shows the current estimation confidence.
-
----
-
-## Testing
-
-### Backend
+## Validation and Tests
 
 ```bash
-# Run from the repository root (tests import from backend.app)
-python -m pytest backend/tests/ -v
-```
+# from the repository root
+python -m pytest backend/tests -v
 
-The test suite contains 48 tests covering twin estimation, bottleneck
-prediction, vehicle quality, incident lifecycle, and guided tour scenarios.
-
-### Frontend
-
-```bash
-cd frontend
+# from frontend
 npm run build
+npm run test:tour
 ```
 
-Verifies TypeScript compilation and production build.
-
----
+The backend suite covers Twin estimation, bottleneck forecasting, vehicle quality, incident lifecycle, and tour/demo scenarios. The frontend build includes TypeScript checking.
 
 ## Repository Structure
 
+```text
+backend/       FastAPI simulation, Twin, prediction, quality, and incidents
+frontend/      React + Three.js product interface
+assets/        Release screenshots
+demo/          Final prototype walkthrough video
+docs/          Public product documentation
 ```
-LineLens/
-├── README.md
-├── LICENSE
-├── .gitignore
-├── ATTRIBUTIONS.md
-│
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx              # Main application
-│   │   ├── GuidedTour.tsx       # Tour spotlight component
-│   │   ├── twin/
-│   │   │   └── FactoryScene.tsx # 3D factory scene
-│   │   ├── api.ts               # API client
-│   │   ├── tour.ts              # Tour step definitions
-│   │   ├── types.ts             # TypeScript interfaces
-│   │   ├── styles.css           # Application styles
-│   │   └── main.tsx             # Entry point
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── tsconfig.json
-│
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI endpoints
-│   │   ├── models.py            # Pydantic data models
-│   │   ├── simulation.py        # Production line simulator
-│   │   ├── twin/
-│   │   │   └── estimator.py     # Evolving twin estimator
-│   │   ├── prediction/
-│   │   │   ├── service.py       # Bottleneck prediction
-│   │   │   ├── risk.py          # Risk scoring model
-│   │   │   ├── forward.py       # Forward twin simulator
-│   │   │   ├── snapshot.py      # Twin state snapshot
-│   │   │   └── models.py        # Prediction data models
-│   │   ├── quality/
-│   │   │   ├── service.py       # Quality twin service
-│   │   │   ├── model.py         # Quality prediction model
-│   │   │   ├── features.py      # Feature extraction
-│   │   │   ├── genealogy.py     # Common factor analysis
-│   │   │   └── quality_model_artifact.json
-│   │   └── incidents/
-│   │       ├── service.py       # Incident management
-│   │       ├── playbooks.py     # Response playbook definitions
-│   │       └── models.py        # Incident data models
-│   ├── tests/
-│   └── requirements.txt
-│
-├── docs/
-│   ├── architecture.md
-│   ├── demo-guide.md
-│   ├── prototype-assumptions.md
-│   ├── validation.md
-│   ├── guided-tour.md
-│   └── GITHUB_RELEASE_CHECKLIST.md
-│
-├── assets/                      # Screenshots (added before release)
-└── demo/                        # Prototype demo video (added before release)
-```
-
----
 
 ## Prototype Assumptions
 
-LineLens is a working prototype, not a production deployment or industrial
-control system.
+- All operating data and outcomes are synthetic.
+- The factory topology is representative, not a specific plant.
+- Prediction and quality outputs are prototype decision-support signals.
+- People decide what to investigate and act on; LineLens is read-only by design.
 
-- All data is **synthetic** — generated by the built-in simulation engine
-- The factory topology is **representative** — 11 stations covering realistic
-  automotive processes, not a specific real plant
-- Prediction models are **interpretable weighted scoring**, calibrated for
-  prototype demonstration scenarios
-- The quality model artifact is trained on **synthetic ground truth**
-- LineLens is **decision support** — it shows evidence and predictions;
-  humans decide what to do
-- It is **read-only by design** — it never writes to PLCs, starts or stops a
-  line, or changes a process automatically
+## License and Attribution
 
-See [docs/prototype-assumptions.md](docs/prototype-assumptions.md) for details.
-
----
-
-## Documentation
-
-| Document | Description |
-|---|---|
-| [Architecture](docs/architecture.md) | Technical architecture: factory, observation layer, twin estimator, prediction, quality, incidents |
-| [Demo Guide](docs/demo-guide.md) | Step-by-step instructions for demonstrating each capability |
-| [Prototype Assumptions](docs/prototype-assumptions.md) | Synthetic data, simplifications, and scope boundaries |
-| [Validation](docs/validation.md) | Prediction-vs-actual validation methodology |
-| [Guided Tour](docs/guided-tour.md) | Quick Tour and first-time walkthrough |
-| [Phase 6 UX](docs/development/PHASE_6_UX.md) | Product Guide, simple-language system, and tour behavior |
-
----
-
-## Challenge Alignment
-
-| DigitalTwin.ai Criterion | LineLens Approach |
-|---|---|
-| **Digital Twin** | Evolving state estimator that learns per-station baselines and adapts to sensor gaps |
-| **Predictive Analytics** | Bottleneck risk scoring with interpretable evidence; forward no-intervention forecast |
-| **Quality Intelligence** | Per-vehicle quality twin with digital build record and common factor analysis |
-| **Human-in-the-Loop** | Structured incidents with evidence, checks, and workflow — never autonomous |
-| **Validation** | Built-in prediction-vs-actual comparison with measured lead times |
-| **Scalability Path** | Station topology defined in a single SPECS array; architecture supports extension |
-| **Mixed Data Maturity** | Three sensor tiers with explicit confidence; works with incomplete instrumentation |
-
----
-
-## License
-
-[CC BY-NC 4.0](LICENSE) — See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for
-third-party library licenses and design reference attribution.
+Licensed under [CC BY-NC 4.0](LICENSE). See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for third-party library and design attribution.

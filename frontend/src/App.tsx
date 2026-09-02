@@ -1,6 +1,5 @@
 import {
   Activity,
-  Bell,
   Box,
   CheckCircle2,
   ChartLine,
@@ -53,7 +52,7 @@ import {
   incidentAction,
 } from "./api";
 import { FactoryScene } from "./twin/FactoryScene";
-import { GuidedTour, PageGuide, ProductGuideMenu } from "./GuidedTour";
+import { GuidedTour, HelpPopover, PageGuide } from "./GuidedTour";
 import { GUIDE_CHAPTERS, TOUR_STEPS, completedGuides, hasSeenTour, rememberGuide, rememberTour } from "./tour";
 import type { GuideChapter } from "./tour";
 import type {
@@ -76,7 +75,7 @@ import type {
   VehicleThread,
 } from "./types";
 
-type Tab = "Dashboard" | "Machines" | "Quality" | "Incidents" | "Analytics" | "Alerts";
+type Tab = "Dashboard" | "Machines" | "Quality" | "Incidents" | "Analytics";
 type ViewAction = "reset" | "zoom-in" | "zoom-out";
 const sections = ["Body Shop", "Paint Shop", "Final Assembly"] as const;
 const stateTone = (state: Station["operational_state"]) =>
@@ -120,11 +119,13 @@ export default function App() {
   const [incidentFilter, setIncidentFilter] = useState<"ACTIVE" | "RESOLVED">("ACTIVE");
   const [moreOpen, setMoreOpen] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [simulationOpen, setSimulationOpen] = useState(false);
   const [validationOpen, setValidationOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
   const [tourMode, setTourMode] = useState<"welcome" | "active" | "complete" | null>(null);
   const [tourStep, setTourStep] = useState(0);
-  const [guideMenuOpen, setGuideMenuOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [guideChapter, setGuideChapter] = useState<GuideChapter | null>(null);
   const [guideStep, setGuideStep] = useState(0);
   const [fullGuide, setFullGuide] = useState(false);
@@ -135,13 +136,28 @@ export default function App() {
     action: "reset",
     tick: 0,
   });
-  const [cameraMode, setCameraMode] = useState<"orbit" | "walk" | "tour">(
+  const [cameraMode, setCameraMode] = useState<"orbit" | "walk" | "flythrough">(
     "orbit",
   );
   const [observationConditions, setObservationConditions] = useState<
     Record<string, { drop: boolean; noise: number }>
   >({});
   const stageRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const closeOverlay = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (cameraMode === "walk") { setCameraMode("orbit"); return; }
+      if (demoOpen) setDemoOpen(false);
+      if (simulationOpen) setSimulationOpen(false);
+      if (activityOpen) setActivityOpen(false);
+      if (validationOpen) setValidationOpen(false);
+      if (moreOpen) setMoreOpen(false);
+      if (helpOpen) setHelpOpen(false);
+    };
+    window.addEventListener("keydown", closeOverlay);
+    return () => window.removeEventListener("keydown", closeOverlay);
+  }, [activityOpen, cameraMode, demoOpen, helpOpen, moreOpen, simulationOpen, validationOpen]);
 
   useEffect(() => {
     if (!state || tourWelcomeChecked.current) return;
@@ -354,30 +370,27 @@ export default function App() {
       setSelectedId(step.stationId);
       setSelectedVehicle(null);
     }
-    if (tourStep <= 2) setDataView("twin");
-    if (tourStep === 3) {
-      setDataView("forecast");
-      setForecastHorizon(300);
-    }
-    if (tourStep === 4) setQualityFilter("ALL");
-    if (tourStep === 5) setQualityFilter("REVIEW");
+    if (step.dataView) setDataView(step.dataView);
+    if (step.dataView === "forecast") setForecastHorizon(300);
+    if (step.qualityFilter) changeQualityFilter(step.qualityFilter);
+    if (step.validation) setValidationOpen(true);
     if (step.scenario && !tourScenarioRun.current.has(step.scenario)) {
       tourScenarioRun.current.add(step.scenario);
       void executeDemo(step.scenario);
     }
-  }, [executeDemo, tourMode, tourStep]);
+  }, [executeDemo, tourMode, tourStep, qualityVehicles]);
 
   useEffect(() => {
-    if (tourMode !== "active" || (tourStep !== 4 && tourStep !== 5) || qualityVehicles.length === 0) return;
-    const candidate = tourStep === 5
+    if (tourMode !== "active" || TOUR_STEPS[tourStep]?.page !== "Quality" || qualityVehicles.length === 0) return;
+    const candidate = TOUR_STEPS[tourStep]?.qualityFilter === "INSPECT"
       ? qualityVehicles.find((vehicle) => vehicle.risk >= .6)
       : qualityVehicles.find((vehicle) => vehicle.line_progress >= .5);
     setSelectedQualityVehicle(candidate ?? qualityVehicles[0]);
   }, [qualityVehicles, tourMode, tourStep]);
 
   useEffect(() => {
-    if (tourMode === "active" && tourStep === 6 && incidents.length) {
-      setSelectedIncident(incidents.find((incident) => incident.type === "QUALITY") ?? incidents[0]);
+    if (tourMode === "active" && TOUR_STEPS[tourStep]?.page === "Incidents" && incidents.length) {
+      setSelectedIncident(incidents.find((incident) => incident.type === "PRODUCTION") ?? incidents[0]);
     }
   }, [incidents, tourMode, tourStep]);
   useEffect(() => {
@@ -517,7 +530,7 @@ export default function App() {
       setState(healthy);
       setIncidents([]);
       setSelectedIncident(null);
-    } catch { setError("Unable to reset the quick tour demonstration."); }
+    } catch { setError("Unable to reset the product tour demonstration."); }
   };
   const skipTour = async () => {
     rememberTour(window.localStorage);
@@ -546,14 +559,9 @@ export default function App() {
     setDataView("twin");
     try { setState(await simulationControl("reset")); } catch { setError("Unable to reset the demonstration."); }
   };
-  const runDemoFromTour = (kind: "bottleneck" | "quality") => {
-    rememberTour(window.localStorage);
-    setTourMode(null);
-    void executeDemo(kind);
-  };
-  const startGuideChapter = (chapter: GuideChapter, chain = false) => {
-    setGuideMenuOpen(false);
-    setFullGuide(chain);
+  const startGuideChapter = (chapter: GuideChapter) => {
+    setHelpOpen(false);
+    setFullGuide(false);
     setGuideStep(0);
     setGuideChapter(chapter);
     setActiveTab(chapter.page as Tab);
@@ -564,14 +572,8 @@ export default function App() {
     if (guideStep < guideChapter.steps.length - 1) { setGuideStep((current) => current + 1); return; }
     const completed = rememberGuide(window.localStorage, guideChapter.id);
     setGuideCompleted(completed);
-    if (fullGuide) {
-      const index = GUIDE_CHAPTERS.findIndex((item) => item.id === guideChapter.id);
-      const next = GUIDE_CHAPTERS[index + 1];
-      if (next) { startGuideChapter(next, true); return; }
-    }
     setGuideChapter(null);
     setFullGuide(false);
-    setGuideMenuOpen(true);
   };
   const selectedAssessment =
     prediction?.assessments.find((item) => item.station_id === selected.id) ??
@@ -608,59 +610,11 @@ export default function App() {
           </span>
           <strong>LineLens</strong>
           <span>Automotive Digital Twin</span>
+          <em className="prototype-badge" title="This prototype uses synthetic factory data.">Prototype</em>
         </div>
-        <div className="live-controls">
-          <span
-            className={
-              state.simulation.is_running ? "live-badge" : "paused-badge"
-            }
-          >
-            <i />{" "}
-            {state.simulation.is_running
-              ? "Simulation live"
-              : "Simulation paused"}
-          </span>
-          {state.synchronization && (
-            <span
-              className={`twin-sync ${state.synchronization.status === "TWIN SYNCHRONIZED" ? "ready" : ""}`}
-              title={syncTooltip}
-            >
-              <i />{" "}
-              {state.synchronization.status === "TWIN SYNCHRONIZED"
-                ? "Twin synchronized"
-                : "Twin estimating"}{" "}
-              <b>
-                {Math.round(state.synchronization.overall_confidence * 100)}%
-                {" confidence"}
-              </b>
-            </span>
-          )}
-          <span
-            className="sim-clock"
-            title="Simulated factory time. Reset returns to a healthy 20-minute warm start so Twin baselines, throughput, and production history are immediately meaningful."
-          >
-            <Timer size={13} /> Simulation time{" "}
-            {clock(state.simulation.shift_elapsed)}
-          </span>
-          <button
-            title={
-              state.simulation.is_running
-                ? "Pause simulation"
-                : "Resume simulation"
-            }
-            onClick={() =>
-              void control(state.simulation.is_running ? "pause" : "resume")
-            }
-          >
-            {state.simulation.is_running ? (
-              <Pause size={14} />
-            ) : (
-              <Play size={14} />
-            )}
-          </button>
-          {(state.simulation.active_scenario || state.simulation.quality_scenario_active) && <span className="demo-active-badge">Demo active · {state.simulation.quality_scenario_active ? "Weld quality issue" : "Bottleneck"}</span>}
-          <button className="header-action" onClick={() => setGuideMenuOpen(true)}><HelpCircle size={14}/> Tour</button>
-          <button className="header-action" onClick={() => setDemoOpen(true)}><FlaskConical size={14}/> Demo</button>
+        <div className="header-utilities">
+          <span className={state.simulation.is_running ? "live-badge" : "paused-badge"}><i />{state.simulation.is_running ? "Running" : "Paused"}</span>
+          <button className="header-action" onClick={() => setHelpOpen((open) => !open)}><HelpCircle size={14}/> Help</button>
         </div>
       </header>
       <nav className="primary-nav">
@@ -683,28 +637,27 @@ export default function App() {
           onClick={() => setActiveTab("Incidents")}
         />
         <div className="more-nav">
-          <button className={["Machines","Analytics","Alerts"].includes(activeTab) ? "active" : ""} onClick={() => setMoreOpen((open) => !open)}><Menu size={15}/> More <ChevronDown size={13}/></button>
+          <button className={["Machines","Analytics"].includes(activeTab) ? "active" : ""} onClick={() => setMoreOpen((open) => !open)}><Menu size={15}/> More <ChevronDown size={13}/></button>
           {moreOpen && <div className="more-menu">
             <button onClick={() => { setActiveTab("Machines"); setMoreOpen(false); }}><List size={14}/> Stations</button>
             <button onClick={() => { setActiveTab("Analytics"); setMoreOpen(false); }}><ChartLine size={14}/> Trends</button>
-            <button onClick={() => { setActiveTab("Alerts"); setMoreOpen(false); }}><Bell size={14}/> Event Log</button>
-            <button onClick={() => { setValidationOpen(true); setMoreOpen(false); }}><CheckCircle2 size={14}/> About / Validation</button>
           </div>}
         </div>
       </nav>
       {error && <div className="service-notice">{error}</div>}
       {activeTab === "Dashboard" && (
-        <section className="dashboard-layout">
-          <StationList
+        <section className={`dashboard-layout ${cameraMode === "walk" ? "walk-layout" : ""}`}>
+          {cameraMode !== "walk" && <StationList
             stations={state.stations}
             events={state.events}
             selectedId={selected.id}
             onSelect={selectStation}
             dataView={dataView}
             prediction={prediction}
-          />
+          />}
           <section ref={stageRef} data-tour="factory-canvas" className={`twin-stage camera-${cameraMode}`}>
             <div className="scene-meta">
+              <button className="page-guide-trigger" onClick={() => startGuideChapter(GUIDE_CHAPTERS[0])}><HelpCircle size={13}/> Guide this page</button>
               <span className={dataView === "forecast" ? "forecast-label" : ""}>
                 {dataView === "forecast"
                   ? "Forecast view"
@@ -712,15 +665,15 @@ export default function App() {
                     ? "Orbit view"
                     : cameraMode === "walk"
                       ? "Walk mode"
-                      : "Factory tour"}
+                    : "Factory flythrough"}
               </span>
               <small>
                 {dataView === "forecast"
                   ? `+${forecastHorizon / 60} min · No intervention · simulation-derived`
                   : cameraMode === "walk"
                     ? "Click scene · WASD move · Shift faster · Esc exit"
-                    : cameraMode === "tour"
-                      ? "Automatic 25 second process tour · Esc cancels"
+                    : cameraMode === "flythrough"
+                      ? "Automatic camera tour of the production line · Esc cancels"
                       : `Drag to orbit · Scroll to zoom · ${state.simulation.speed}× twin data`}
               </small>
               <div data-tour="forecast-control" className="data-view-switch">
@@ -767,7 +720,7 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div className="scene-tools">
+            <div data-tour="viewport-controls" className="scene-tools">
               <button
                 aria-label="Reset view"
                 title="Reset view"
@@ -810,15 +763,18 @@ export default function App() {
                 )}
               </button>
               <button
-                className={cameraMode === "tour" ? "active" : ""}
-                aria-label="Factory tour"
-                title="Factory tour"
+                className={cameraMode === "flythrough" ? "active" : ""}
+                aria-label={cameraMode === "flythrough" ? "Stop flythrough" : "Factory flythrough"}
+                title={cameraMode === "flythrough" ? "Stop flythrough" : "Automatic camera tour of the production line"}
                 onClick={() =>
-                  setCameraMode(cameraMode === "tour" ? "orbit" : "tour")
+                  setCameraMode(cameraMode === "flythrough" ? "orbit" : "flythrough")
                 }
               >
-                <Route size={15} />
+                {cameraMode === "flythrough" ? <X size={15} /> : <Route size={15} />}
               </button>
+              <span className="tool-divider" />
+              <button aria-label="Simulation controls" title="Simulation controls" onClick={() => setSimulationOpen((open) => !open)}><Timer size={15}/></button>
+              <button aria-label="Demo scenarios" title="Synthetic demo scenarios" onClick={() => setDemoOpen(true)}><FlaskConical size={15}/></button>
               <button
                 aria-label="Toggle fullscreen"
                 title="Fullscreen"
@@ -857,6 +813,8 @@ export default function App() {
               )}
               qualityScenarioActive={state.simulation.quality_scenario_active}
             />
+            {(state.simulation.active_scenario || state.simulation.quality_scenario_active) && <span className="demo-active-small"><i />Demo · {state.simulation.quality_scenario_active ? "Weld quality" : "Bottleneck"}</span>}
+            {cameraMode === "walk" && <div className="walk-hud"><b>Walk mode</b><span>WASD / arrows move · Mouse look · Shift faster · Esc exit</span><button onClick={() => setCameraMode("orbit")}>Exit walk</button></div>}
             <div className="asset-overlay">
               {selectedVehicle ? (
                 <VehicleOverlay
@@ -873,7 +831,7 @@ export default function App() {
               )}
             </div>
           </section>
-          <RightPanel
+          {cameraMode !== "walk" && <RightPanel
             state={state}
             selected={selected}
             dataView={dataView}
@@ -889,7 +847,7 @@ export default function App() {
             incident={incidents.find((item) => item.affected_assets.some((asset) => asset.asset_id === selected.id)) ?? null}
             vehicleIncident={selectedVehicle ? incidents.find((item) => item.affected_vehicles.some((vehicle) => vehicle.vehicle_id === selectedVehicle.vehicle_id)) ?? null : null}
             onOpenIncident={openIncident}
-          />
+          />}
         </section>
       )}
       {activeTab === "Machines" && (
@@ -897,6 +855,7 @@ export default function App() {
           stations={state.stations}
           dataView={dataView}
           onSelect={selectStation}
+          onGuide={() => startGuideChapter(GUIDE_CHAPTERS[3])}
         />
       )}
       {activeTab === "Analytics" && (
@@ -907,6 +866,7 @@ export default function App() {
           onSelect={setSelectedId}
           assessment={selectedAssessment}
           forecast={selectedForecast}
+          onGuide={() => startGuideChapter(GUIDE_CHAPTERS[4])}
         />
       )}
       {activeTab === "Incidents" && (
@@ -918,13 +878,7 @@ export default function App() {
           onSelect={setSelectedIncident}
           onAction={updateIncident}
           onNote={noteIncident}
-        />
-      )}
-      {activeTab === "Alerts" && (
-        <EventsView
-          events={state.events}
-          forecastAlerts={prediction?.alerts ?? []}
-          validation={prediction?.validation ?? null}
+          onGuide={() => startGuideChapter(GUIDE_CHAPTERS[2])}
         />
       )}
       {activeTab === "Quality" && (
@@ -940,12 +894,15 @@ export default function App() {
           onFilter={changeQualityFilter}
           incident={selectedQualityVehicle ? incidents.find((item) => item.affected_vehicles.some((vehicle) => vehicle.vehicle_id === selectedQualityVehicle.vehicle_id)) ?? null : null}
           onOpenIncident={openIncident}
+          onGuide={() => startGuideChapter(GUIDE_CHAPTERS[1])}
         />
       )}
+      {simulationOpen && <SimulationPopover running={state.simulation.is_running} elapsed={state.simulation.shift_elapsed} speed={state.simulation.speed} onClose={() => setSimulationOpen(false)} onControl={control} onSpeed={speed}/>}
       {demoOpen && <DemoDrawer busy={demoBusy} activeScenario={state.simulation.active_scenario !== null} qualityActive={state.simulation.quality_scenario_active} speed={state.simulation.speed} onClose={() => setDemoOpen(false)} onRun={(kind) => void executeDemo(kind)} onSensorLoss={() => { setDemoOpen(false); setActiveTab("Dashboard"); setSelectedId("FA-01"); void testCondition("FA-01", { drop: true }); }} onReset={() => { setDemoOpen(false); void control("reset"); }} onSpeed={speed} />}
       {validationOpen && <ValidationDrawer state={state} quality={qualityMetrics} prediction={prediction} onClose={() => setValidationOpen(false)} />}
-      <GuidedTour mode={tourMode} step={tourStep} busy={demoBusy} onStart={() => void beginTour()} onBack={() => setTourStep((current) => Math.max(0, current - 1))} onNext={nextTour} onSkip={() => void skipTour()} onExplore={() => void exploreAfterTour()} onLearn={() => { setTourMode(null); setGuideMenuOpen(true); }} onDemo={runDemoFromTour} />
-      {guideMenuOpen && <ProductGuideMenu completed={guideCompleted} onQuick={() => { setGuideMenuOpen(false); setTourMode("welcome"); }} onFull={() => startGuideChapter(GUIDE_CHAPTERS[0], true)} onChapter={(chapter) => startGuideChapter(chapter)} onClose={() => setGuideMenuOpen(false)} />}
+      {activityOpen && <ActivityDrawer events={state.events} forecastAlerts={prediction?.alerts ?? []} validation={prediction?.validation ?? null} onClose={() => setActivityOpen(false)}/>}
+      <HelpPopover open={helpOpen} onClose={() => setHelpOpen(false)} onStart={() => { setHelpOpen(false); void beginTour(); }} onActivity={() => { setHelpOpen(false); setActivityOpen(true); }} onValidation={() => { setHelpOpen(false); setValidationOpen(true); }}/>
+      <GuidedTour mode={tourMode} step={tourStep} busy={demoBusy} onStart={() => void beginTour()} onBack={() => setTourStep((current) => Math.max(0, current - 1))} onNext={nextTour} onExit={() => void skipTour()} onExplore={() => void exploreAfterTour()} />
       {guideChapter && <PageGuide chapter={guideChapter} step={guideStep} onBack={() => setGuideStep((current) => Math.max(0, current - 1))} onNext={finishGuideStep} onExit={() => { setGuideChapter(null); setFullGuide(false); }} />}
     </main>
   );
@@ -963,6 +920,10 @@ function DemoDrawer({ busy, activeScenario, qualityActive, speed, onClose, onRun
   onSpeed: (speed: number) => void;
 }) {
   return <div className="drawer-backdrop" onClick={onClose}><aside className="app-drawer" onClick={(event) => event.stopPropagation()}><header><div><span>Synthetic demonstration</span><h2>Demo scenarios</h2></div><button aria-label="Close demo" onClick={onClose}><X size={17}/></button></header><p>These controls change only the local factory simulation. They never represent production commands.</p><div className="demo-options"><button disabled={busy} onClick={() => onRun("bottleneck")}><CircleAlert size={18}/><span><b>Bottleneck</b><small>Run a short Chassis Marriage slowdown through the real prediction pipeline.</small></span></button><button disabled={busy} onClick={() => onRun("quality")}><Shield size={18}/><span><b>Weld quality issue</b><small>Create a real risky-vehicle cohort and common weld pattern.</small></span></button><button disabled={busy} onClick={onSensorLoss}><Activity size={18}/><span><b>Sensor loss</b><small>Show how LineLens estimates Trim Station with limited direct data.</small></span></button></div><section><span>Simulation speed</span><div className="drawer-speed">{[1,5,8,10].map((value) => <button key={value} className={speed === value ? "active" : ""} onClick={() => onSpeed(value)}>{value}×</button>)}</div></section>{(activeScenario || qualityActive) && <div className="demo-running"><i/> Demo currently active</div>}<button className="reset-demo" disabled={busy} onClick={onReset}><RotateCcw size={14}/> Reset demo</button>{busy && <div className="drawer-busy"><span className="spinner"/>Running the real factory simulation…</div>}</aside></div>;
+}
+
+function SimulationPopover({ running, elapsed, speed, onClose, onControl, onSpeed }: { running: boolean; elapsed: number; speed: number; onClose: () => void; onControl: (action: "reset" | "pause" | "resume") => Promise<void>; onSpeed: (speed: number) => Promise<void> }) {
+  return <div className="viewport-popover-backdrop" onMouseDown={onClose}><aside className="viewport-popover" onMouseDown={(event) => event.stopPropagation()}><header><span>Simulation</span><button aria-label="Close simulation controls" onClick={onClose}><X size={15}/></button></header><b className={running ? "live-badge" : "paused-badge"}><i />{running ? "Running" : "Paused"}</b><small>Simulation time {clock(elapsed)}</small><div className="drawer-speed">{[1, 5, 8, 10].map((value) => <button key={value} className={speed === value ? "active" : ""} onClick={() => void onSpeed(value)}>{value}×</button>)}</div><div className="popover-actions"><button onClick={() => void onControl(running ? "pause" : "resume")}>{running ? <Pause size={14}/> : <Play size={14}/>}{running ? "Pause" : "Resume"}</button><button className="quiet" onClick={() => void onControl("reset")}><RotateCcw size={14}/>Reset</button></div></aside></div>;
 }
 
 function ValidationDrawer({ state, quality, prediction, onClose }: { state: TwinState; quality: QualityMetrics | null; prediction: PredictionState | null; onClose: () => void }) {
@@ -1269,6 +1230,7 @@ function IncidentsView({
   onSelect,
   onAction,
   onNote,
+  onGuide,
 }: {
   incidents: Incident[];
   selectedIncident: Incident | null;
@@ -1277,6 +1239,7 @@ function IncidentsView({
   onSelect: (incident: Incident) => void;
   onAction: (action: "acknowledge" | "investigate" | "resolve", incident: Incident) => void;
   onNote: (incident: Incident, note: string) => void;
+  onGuide: () => void;
 }) {
   const [note, setNote] = useState("");
   const active = selectedIncident && incidents.some((item) => item.incident_id === selectedIncident.incident_id) ? selectedIncident : incidents[0] ?? null;
@@ -1284,7 +1247,7 @@ function IncidentsView({
   return (
     <section className="incidents-layout">
       <aside data-tour="incident-list" className="incidents-list">
-        <div className="sidebar-title"><div><span>Attention needed</span><small>{filter === "ACTIVE" ? `${incidents.length} active incidents` : `${incidents.length} resolved incidents`}</small></div><b>{incidents.length}</b></div>
+        <div className="sidebar-title"><div><span>Attention needed</span><small>{filter === "ACTIVE" ? `${incidents.length} active incidents` : `${incidents.length} resolved incidents`}</small></div><button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button><b>{incidents.length}</b></div>
         <div className="quality-filters"><button className={filter === "ACTIVE" ? "active" : ""} onClick={() => onFilter("ACTIVE")}>ACTIVE</button><button className={filter === "RESOLVED" ? "active" : ""} onClick={() => onFilter("RESOLVED")}>RESOLVED</button></div>
         <div className="incident-list-scroll">
           {incidents.length === 0 ? <div className="incident-empty"><CheckCircle2 size={26}/><b>{filter === "ACTIVE" ? "No active incidents" : "No resolved incidents yet"}</b><small>{filter === "ACTIVE" ? "LineLens is monitoring production and vehicle quality. Factory operation is within expected conditions." : "Resolved incidents will remain here for this simulation session."}</small></div> : incidents.map((incident) => <button key={incident.incident_id} onClick={() => onSelect(incident)} className={`incident-row ${active?.incident_id === incident.incident_id ? "selected" : ""}`}><i className={incident.severity.toLowerCase()} /><span><b>{incident.title}</b><small>{incident.source} · {incident.status.replaceAll("_", " ")}</small></span><em>{incident.incident_id}</em></button>)}
@@ -1311,7 +1274,7 @@ function IncidentsView({
   );
 }
 
-function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehicle, qualityRecord, genealogy, metrics, scenario, filter, onFilter, incident, onOpenIncident }: {
+function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehicle, qualityRecord, genealogy, metrics, scenario, filter, onFilter, incident, onOpenIncident, onGuide }: {
   qualityVehicles: QualityVehicleListItem[];
   selectedVehicle: QualityVehicleListItem | null;
   onSelectVehicle: (vehicle: QualityVehicleListItem | null) => void;
@@ -1323,6 +1286,7 @@ function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehic
   onFilter: (filter: "REVIEW" | "WATCH" | "INSPECT" | "ALL") => void;
   incident: Incident | null;
   onOpenIncident: (incident: Incident | null) => void;
+  onGuide: () => void;
 }) {
   const reviewCount = qualityVehicles.filter((vehicle) => vehicle.risk >= .35).length;
   const inspectCount = qualityVehicles.filter((vehicle) => vehicle.risk >= .6).length;
@@ -1333,7 +1297,7 @@ function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehic
   const warningsChecked = metrics ? metrics.true_positives + metrics.false_positives : 0;
   return <section className="quality-layout quality-simple">
     <aside data-tour="quality-vehicle-list" className="quality-sidebar">
-      <div className="sidebar-title"><div><span>Vehicles to review</span><small>{reviewCount ? `${reviewCount} need attention` : "No urgent quality review"}</small></div><b>{reviewCount}</b></div>
+      <div className="sidebar-title"><div><span>Vehicles to review</span><small>{reviewCount ? `${reviewCount} need attention` : "No urgent quality review"}</small></div><button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button><b>{reviewCount}</b></div>
       <div className={`quality-summary-line ${reviewCount ? "attention" : "calm"}`}>{reviewCount ? <CircleAlert size={15}/> : <CheckCircle2 size={15}/>}<span><b>{inspectCount ? `${inspectCount} inspect now` : "Quality looks calm"}</b>{reviewCount ? `${reviewCount - inspectCount} additional vehicles are on watch` : "All monitored vehicles remain below the watch level"}</span></div>
       <div className="quality-filters">{(["REVIEW","INSPECT","WATCH","ALL"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => onFilter(item)}>{item === "REVIEW" ? "TO REVIEW" : item === "ALL" ? "ALL VEHICLES" : item}</button>)}</div>
       <div className="quality-scroll">{filtered.length === 0 ? <div className="quality-empty"><Shield size={24}/><p>No vehicles need review</p><small>Use All vehicles to inspect the full monitored population.</small></div> : filtered.map((vehicle) => <button key={vehicle.vehicle_id} className={`quality-row ${selectedVehicle?.vehicle_id === vehicle.vehicle_id ? "selected" : ""}`} onClick={() => onSelectVehicle(vehicle)}><div className="quality-risk-indicator" style={{backgroundColor: vehicle.risk >= .6 ? "#e07b35" : vehicle.risk >= .35 ? "#d89a3b" : "#4f85a6"}}/><div className="quality-vehicle-info"><strong>{vehicle.vehicle_id}</strong><small>{vehicle.current_station}</small></div><div className="quality-risk-score"><b>{Math.round(vehicle.risk * 100)}%</b><small>{vehicle.risk >= .6 ? "INSPECT" : vehicle.risk >= .35 ? "WATCH" : "OK"}</small></div></button>)}</div>
@@ -1348,7 +1312,6 @@ function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehic
       </div> : <div className="quality-empty-detail"><Shield size={32}/><span>QUALITY OVERVIEW</span><p>{reviewCount ? "Select a vehicle to review" : "No vehicle needs extra inspection right now."}</p><small>{qualityVehicles.length ? `LineLens is monitoring ${qualityVehicles.length} active vehicle${qualityVehicles.length === 1 ? "" : "s"}.` : "LineLens is waiting for vehicles to enter the quality workflow."}</small>{qualityVehicles.length > 0 && <button className="calm-action" onClick={() => onFilter("ALL")}>View all monitored vehicles</button>}<small className="calm-note">A calm screen is a result, not a missing result. New quality findings will appear here when evidence warrants attention.</small></div>}
     </section>
     <aside className="quality-right quality-simple-right">
-      {scenario?.active && <div className="demo-active-small"><i/>Demo active · Weld quality issue</div>}
       <section data-tour="common-pattern" className="genealogy-panel common-pattern-simple"><div className="twin-section-title"><span>Common pattern</span><b className="inferred-tag">{genealogy?.cohort_size ?? 0} risky</b></div>{primaryFactor ? <><p><b>{primaryFactor.support} of {genealogy?.cohort_size} risky vehicles</b> passed through:</p><h2>{primaryFactor.factor_name}</h2>{factors.length > 1 && <div className="also-common"><span>Also common</span>{factors.slice(1,3).map((factor) => <b key={factor.factor_id}>{factor.factor_name}</b>)}</div>}<details className="app-details"><summary>View analysis <ChevronDown size={14}/></summary>{factors.slice(0,4).map((factor) => <div className="analysis-row" key={factor.factor_id}><b>{factor.factor_name}</b><small>{factor.risk_lift.toFixed(1)}× more common · {factor.support}/{genealogy?.cohort_size ?? factor.support} vehicles · baseline {(factor.baseline_prevalence*100).toFixed(1)}%</small></div>)}<small>Patterns indicate where to investigate; they do not prove cause.</small></details></> : <div className="genealogy-empty"><CheckCircle2 size={17}/><span>No shared problem pattern.<small>LineLens continues comparing tools, cells and component lots.</small></span></div>}</section>
       {metrics && <section className="quality-metrics validation-simple-card"><div className="twin-section-title"><span>How well is LineLens doing?</span></div><div className="validation-primary"><div><small>Warnings checked</small><b>{warningsChecked}</b></div><div><small>Correct warnings</small><b>{metrics.precision == null ? "Awaiting outcomes" : `${Math.round(metrics.precision*100)}%`}</b></div><div><small>Median time gained</small><b>{metrics.prediction_lead_time_mean == null ? "Awaiting outcomes" : `${(metrics.prediction_lead_time_mean/60).toFixed(1)} min`}</b></div></div><details className="app-details"><summary>View technical metrics <ChevronDown size={14}/></summary><div className="metrics-grid"><Operation label="Predictions" value={metrics.total_predictions.toString()}/><Operation label="Defect rate" value={`${(metrics.defect_rate*100).toFixed(1)}%`}/><Operation label="Precision" value={metrics.precision == null ? "—" : `${(metrics.precision*100).toFixed(1)}%`}/><Operation label="Recall" value={metrics.recall == null ? "—" : `${(metrics.recall*100).toFixed(1)}%`}/></div></details></section>}
     </aside>
@@ -2188,14 +2151,17 @@ function MachinesView({
   stations,
   dataView,
   onSelect,
+  onGuide,
 }: {
   stations: Station[];
   dataView: "twin" | "observed" | "forecast";
   onSelect: (id: string) => void;
+  onGuide: () => void;
 }) {
   return (
     <section data-tour="station-directory" className="simple-page">
-      <div>
+      <div className="page-title-row">
+        <div>
         <span>Station directory</span>
         <h1>Production stations</h1>
         <p>
@@ -2203,7 +2169,7 @@ function MachinesView({
             ? "Compare current behaviour with normal operation and see how strong the available evidence is."
             : "Observed view shows only the factory signals received directly."}
         </p>
-      </div>
+        </div><button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button></div>
       <div className="machine-table twin-machine-table">
         <div className="machine-head">
           <span>Station</span>
@@ -2273,6 +2239,7 @@ function AnalyticsView({
   onSelect,
   assessment,
   forecast,
+  onGuide,
 }: {
   history: HistoryPoint[];
   station: Station;
@@ -2280,6 +2247,7 @@ function AnalyticsView({
   onSelect: (id: string) => void;
   assessment: BottleneckAssessment | null;
   forecast: ForwardResult | null;
+  onGuide: () => void;
 }) {
   const recent = history.slice(-28);
   return (
@@ -2292,6 +2260,7 @@ function AnalyticsView({
             Factory data, LineLens's Twin estimate and normal behaviour over time.
           </p>
         </div>
+        <button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button>
         <label>
           Station
           <select
@@ -2594,14 +2563,16 @@ function ChartCard({
     </section>
   );
 }
-function EventsView({
+function ActivityDrawer({
   events,
   forecastAlerts,
   validation,
+  onClose,
 }: {
   events: OperationalEvent[];
   forecastAlerts: ForecastAlert[];
   validation: ForecastValidation | null;
+  onClose: () => void;
 }) {
   const [eventFilter, setEventFilter] = useState<"IMPORTANT" | "ALL">("IMPORTANT");
   const combined = [
@@ -2619,10 +2590,10 @@ function EventsView({
     ? combined.filter((event) => event.forecast || event.severity !== "INFO")
     : combined;
   return (
-    <section data-tour="event-log" className="simple-page">
+    <div className="drawer-backdrop activity-backdrop" onClick={onClose}><aside data-tour="event-log" className="app-drawer activity-drawer" onClick={(event) => event.stopPropagation()}>
+      <header><div><span>Detailed factory history</span><h2>Activity</h2></div><button aria-label="Close activity" onClick={onClose}><X size={17}/></button></header>
+      <section className="activity-content">
       <div>
-          <span>Detailed factory history</span>
-          <h1>Event Log</h1>
         <p>
           Important events first: warnings, quality findings, incidents and sensor issues.
         </p>
@@ -2663,6 +2634,6 @@ function EventsView({
           </small>
         </section>
       )}
-    </section>
+      </section></aside></div>
   );
 }

@@ -25,8 +25,8 @@ interface FactorySceneProps {
   onSelectVehicle?: (vehicle: LineVehicle) => void;
   viewAction: "reset" | "zoom-in" | "zoom-out";
   viewTick: number;
-  cameraMode: "orbit" | "walk" | "tour";
-  onCameraModeChange: (mode: "orbit" | "walk" | "tour") => void;
+  cameraMode: "orbit" | "walk" | "flythrough";
+  onCameraModeChange: (mode: "orbit" | "walk" | "flythrough") => void;
   forecastPoint: TrajectoryPoint | null;
   forecastImpacts: ForecastImpact[];
   currentQueues: Record<string, number>;
@@ -319,22 +319,9 @@ function CameraRig({
       walkPosition.current.set(-12.8, 1.68, 0);
       lockedOnce.current = false;
       setControlsEnabled(false);
-      const requestLock = gl.domElement.requestPointerLock as unknown as
-        (() => Promise<void> | void) | undefined;
-      if (
-        gl.domElement.isConnected &&
-        gl.domElement.ownerDocument === document
-      ) {
-        try {
-          const request = requestLock?.call(gl.domElement);
-          if (request && typeof request.catch === "function")
-            void request.catch(() => undefined);
-        } catch {
-          /* Pointer lock can be unavailable after a canvas refresh; Walk Mode remains safely escapable. */
-        }
-      }
+      // Pointer lock must start from an intentional scene click, not on mode entry.
     }
-    if (mode === "tour") {
+    if (mode === "flythrough") {
       savedPosition.current.copy(camera.position);
       savedTarget.current.copy(control.target);
       tourStart.current = performance.now() / 1000;
@@ -365,10 +352,10 @@ function CameraRig({
         ),
         right = new Vector3(forward.z, 0, -forward.x),
         candidate = walkPosition.current.clone();
-      if (keys.current.has("KeyW")) candidate.addScaledVector(forward, step);
-      if (keys.current.has("KeyS")) candidate.addScaledVector(forward, -step);
-      if (keys.current.has("KeyA")) candidate.addScaledVector(right, -step);
-      if (keys.current.has("KeyD")) candidate.addScaledVector(right, step);
+      if (keys.current.has("KeyW") || keys.current.has("ArrowUp")) candidate.addScaledVector(forward, step);
+      if (keys.current.has("KeyS") || keys.current.has("ArrowDown")) candidate.addScaledVector(forward, -step);
+      if (keys.current.has("KeyA") || keys.current.has("ArrowLeft")) candidate.addScaledVector(right, -step);
+      if (keys.current.has("KeyD") || keys.current.has("ArrowRight")) candidate.addScaledVector(right, step);
       candidate.x = MathUtils.clamp(
         candidate.x,
         -FACTORY_X_LIMIT,
@@ -390,7 +377,7 @@ function CameraRig({
       camera.rotation.set(pitch.current, yaw.current, 0);
       return;
     }
-    if (mode === "tour") {
+    if (mode === "flythrough") {
       if (tourStart.current === null) {
         tourStart.current = performance.now() / 1000;
         return;
@@ -1640,6 +1627,11 @@ export function FactoryScene(props: FactorySceneProps) {
       camera={{ position: DEFAULT_CAMERA.toArray(), fov: 39 }}
       dpr={[1, 1.55]}
       gl={{ antialias: true, toneMappingExposure: 1.05 }}
+      onPointerDown={(event) => {
+        if (props.cameraMode !== "walk") return;
+        const canvas = event.currentTarget as unknown as HTMLCanvasElement;
+        if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
+      }}
     >
       <Scene {...props} />
     </Canvas>
