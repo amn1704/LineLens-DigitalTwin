@@ -75,7 +75,7 @@ import type {
   VehicleThread,
 } from "./types";
 
-type Tab = "Dashboard" | "Machines" | "Quality" | "Incidents" | "Analytics";
+type Tab = "Dashboard" | "Machines" | "Quality" | "Incidents" | "Activity" | "Analytics";
 type ViewAction = "reset" | "zoom-in" | "zoom-out";
 const sections = ["Body Shop", "Paint Shop", "Final Assembly"] as const;
 const stateTone = (state: Station["operational_state"]) =>
@@ -120,8 +120,8 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
   const [simulationOpen, setSimulationOpen] = useState(false);
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [validationOpen, setValidationOpen] = useState(false);
-  const [activityOpen, setActivityOpen] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
   const [tourMode, setTourMode] = useState<"welcome" | "active" | "complete" | null>(null);
   const [tourStep, setTourStep] = useState(0);
@@ -150,14 +150,14 @@ export default function App() {
       if (cameraMode === "walk") { setCameraMode("orbit"); return; }
       if (demoOpen) setDemoOpen(false);
       if (simulationOpen) setSimulationOpen(false);
-      if (activityOpen) setActivityOpen(false);
+      if (viewOptionsOpen) setViewOptionsOpen(false);
       if (validationOpen) setValidationOpen(false);
       if (moreOpen) setMoreOpen(false);
       if (helpOpen) setHelpOpen(false);
     };
     window.addEventListener("keydown", closeOverlay);
     return () => window.removeEventListener("keydown", closeOverlay);
-  }, [activityOpen, cameraMode, demoOpen, helpOpen, moreOpen, simulationOpen, validationOpen]);
+  }, [cameraMode, demoOpen, helpOpen, moreOpen, simulationOpen, validationOpen, viewOptionsOpen]);
 
   useEffect(() => {
     if (!state || tourWelcomeChecked.current) return;
@@ -636,6 +636,12 @@ export default function App() {
           icon={<CircleAlert size={15} />}
           onClick={() => setActiveTab("Incidents")}
         />
+        <NavTab
+          active={activeTab === "Activity"}
+          label="Activity"
+          icon={<Activity size={15} />}
+          onClick={() => setActiveTab("Activity")}
+        />
         <div className="more-nav">
           <button className={["Machines","Analytics"].includes(activeTab) ? "active" : ""} onClick={() => setMoreOpen((open) => !open)}><Menu size={15}/> More <ChevronDown size={13}/></button>
           {moreOpen && <div className="more-menu">
@@ -752,9 +758,10 @@ export default function App() {
                   cameraMode === "walk" ? "Exit walk mode" : "Enter walk mode"
                 }
                 title={cameraMode === "walk" ? "Exit walk mode" : "Walk mode"}
-                onClick={() =>
-                  setCameraMode(cameraMode === "walk" ? "orbit" : "walk")
-                }
+                onClick={() => {
+                  setViewOptionsOpen(false);
+                  setCameraMode(cameraMode === "walk" ? "orbit" : "walk");
+                }}
               >
                 {cameraMode === "walk" ? (
                   <X size={15} />
@@ -763,26 +770,20 @@ export default function App() {
                 )}
               </button>
               <button
-                className={cameraMode === "flythrough" ? "active" : ""}
-                aria-label={cameraMode === "flythrough" ? "Stop flythrough" : "Factory flythrough"}
-                title={cameraMode === "flythrough" ? "Stop flythrough" : "Automatic camera tour of the production line"}
-                onClick={() =>
-                  setCameraMode(cameraMode === "flythrough" ? "orbit" : "flythrough")
-                }
+                className={viewOptionsOpen ? "active" : ""}
+                aria-label="More view controls"
+                aria-expanded={viewOptionsOpen}
+                title="More view controls"
+                onClick={() => setViewOptionsOpen((open) => !open)}
               >
-                {cameraMode === "flythrough" ? <X size={15} /> : <Route size={15} />}
-              </button>
-              <span className="tool-divider" />
-              <button aria-label="Simulation controls" title="Simulation controls" onClick={() => setSimulationOpen((open) => !open)}><Timer size={15}/></button>
-              <button aria-label="Demo scenarios" title="Synthetic demo scenarios" onClick={() => setDemoOpen(true)}><FlaskConical size={15}/></button>
-              <button
-                aria-label="Toggle fullscreen"
-                title="Fullscreen"
-                onClick={() => void toggleFullscreen()}
-              >
-                <Expand size={15} />
+                <Settings2 size={15} />
               </button>
             </div>
+            {viewOptionsOpen && <aside className="view-options-popover" aria-label="Additional view controls">
+              <header><span>More controls</span><button aria-label="Close more controls" onClick={() => setViewOptionsOpen(false)}><X size={14}/></button></header>
+              <section><span>View</span><button onClick={() => { setCameraMode(cameraMode === "flythrough" ? "orbit" : "flythrough"); setViewOptionsOpen(false); }}><Route size={15}/><div><b>{cameraMode === "flythrough" ? "Stop flythrough" : "Factory flythrough"}</b><small>Automatic production-line tour</small></div></button><button onClick={() => { void toggleFullscreen(); setViewOptionsOpen(false); }}><Expand size={15}/><div><b>Fullscreen</b><small>Focus on the factory view</small></div></button></section>
+              <section><span>Simulation</span><button onClick={() => { setSimulationOpen(true); setViewOptionsOpen(false); }}><Timer size={15}/><div><b>Simulation controls</b><small>Pause, reset, or change speed</small></div></button><button onClick={() => { setDemoOpen(true); setViewOptionsOpen(false); }}><FlaskConical size={15}/><div><b>Synthetic demo</b><small>Run a safe preset scenario</small></div></button></section>
+            </aside>}
             {cameraMode !== "walk" && incidents.slice(0, 1).map((incident) => (
               <button key={incident.incident_id} data-tour="incident-summary" className="dashboard-quality-summary" onClick={() => openIncident(incident)}>
                 <ClipboardCheck size={15} />
@@ -881,6 +882,14 @@ export default function App() {
           onGuide={() => startGuideChapter(GUIDE_CHAPTERS[2])}
         />
       )}
+      {activeTab === "Activity" && (
+        <ActivityView
+          events={state.events}
+          forecastAlerts={prediction?.alerts ?? []}
+          validation={prediction?.validation ?? null}
+          onGuide={() => startGuideChapter(GUIDE_CHAPTERS[5])}
+        />
+      )}
       {activeTab === "Quality" && (
         <SimplifiedQualityView
           qualityVehicles={qualityVehicles}
@@ -900,8 +909,7 @@ export default function App() {
       {simulationOpen && <SimulationPopover running={state.simulation.is_running} elapsed={state.simulation.shift_elapsed} speed={state.simulation.speed} onClose={() => setSimulationOpen(false)} onControl={control} onSpeed={speed}/>}
       {demoOpen && <DemoDrawer busy={demoBusy} activeScenario={state.simulation.active_scenario !== null} qualityActive={state.simulation.quality_scenario_active} speed={state.simulation.speed} onClose={() => setDemoOpen(false)} onRun={(kind) => void executeDemo(kind)} onSensorLoss={() => { setDemoOpen(false); setActiveTab("Dashboard"); setSelectedId("FA-01"); void testCondition("FA-01", { drop: true }); }} onReset={() => { setDemoOpen(false); void control("reset"); }} onSpeed={speed} />}
       {validationOpen && <ValidationDrawer state={state} quality={qualityMetrics} prediction={prediction} onClose={() => setValidationOpen(false)} />}
-      {activityOpen && <ActivityDrawer events={state.events} forecastAlerts={prediction?.alerts ?? []} validation={prediction?.validation ?? null} onClose={() => setActivityOpen(false)}/>}
-      <HelpPopover open={helpOpen} chapters={GUIDE_CHAPTERS} completedChapterIds={guideCompleted} onClose={() => setHelpOpen(false)} onStart={() => { setHelpOpen(false); void beginTour(); }} onChapter={startGuideChapter} onActivity={() => { setHelpOpen(false); setActivityOpen(true); }} onValidation={() => { setHelpOpen(false); setValidationOpen(true); }}/>
+      <HelpPopover open={helpOpen} chapters={GUIDE_CHAPTERS} completedChapterIds={guideCompleted} onClose={() => setHelpOpen(false)} onStart={() => { setHelpOpen(false); void beginTour(); }} onChapter={startGuideChapter} onActivity={() => { setHelpOpen(false); setActiveTab("Activity"); }} onValidation={() => { setHelpOpen(false); setValidationOpen(true); }}/>
       <GuidedTour mode={tourMode} step={tourStep} busy={demoBusy} onStart={() => void beginTour()} onBack={() => setTourStep((current) => Math.max(0, current - 1))} onNext={nextTour} onExit={() => void skipTour()} onExplore={() => void exploreAfterTour()} />
       {guideChapter && <PageGuide chapter={guideChapter} step={guideStep} onBack={() => setGuideStep((current) => Math.max(0, current - 1))} onNext={finishGuideStep} onExit={() => { setGuideChapter(null); setFullGuide(false); }} />}
     </main>
@@ -1247,8 +1255,9 @@ function IncidentsView({
   return (
     <section className="incidents-layout">
       <aside data-tour="incident-list" className="incidents-list">
-        <div className="sidebar-title"><div><span>Attention needed</span><small>{filter === "ACTIVE" ? `${incidents.length} active incidents` : `${incidents.length} resolved incidents`}</small></div><button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button><b>{incidents.length}</b></div>
+        <div className="sidebar-title incident-queue-title"><div><span>Incident queue</span><small>{filter === "ACTIVE" ? `${incidents.length} active incidents requiring human review` : `${incidents.length} resolved incidents in this session`}</small></div><button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button><b>{incidents.length}</b></div>
         <div className="quality-filters"><button className={filter === "ACTIVE" ? "active" : ""} onClick={() => onFilter("ACTIVE")}>ACTIVE</button><button className={filter === "RESOLVED" ? "active" : ""} onClick={() => onFilter("RESOLVED")}>RESOLVED</button></div>
+        <div className="incident-filter-note"><span>{filter === "ACTIVE" ? "Active queue" : "Session history"}</span><small>{filter === "ACTIVE" ? "Only persistent risks enter this list. A calm queue needs no action." : "Resolved incidents remain visible until the simulation session is reset."}</small></div>
         <div className="incident-list-scroll">
           {incidents.length === 0 ? <div className="incident-empty"><CheckCircle2 size={26}/><b>{filter === "ACTIVE" ? "No active incidents" : "No resolved incidents yet"}</b><small>{filter === "ACTIVE" ? "LineLens is monitoring production and vehicle quality. Factory operation is within expected conditions." : "Resolved incidents will remain here for this simulation session."}</small></div> : incidents.map((incident) => <button key={incident.incident_id} onClick={() => onSelect(incident)} className={`incident-row ${active?.incident_id === incident.incident_id ? "selected" : ""}`}><i className={incident.severity.toLowerCase()} /><span><b>{incident.title}</b><small>{incident.source} · {incident.status.replaceAll("_", " ")}</small></span><em>{incident.incident_id}</em></button>)}
         </div>
@@ -1309,11 +1318,11 @@ function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehic
         {incident && <button className="incident-context-link" onClick={() => onOpenIncident(incident)}>Part of quality incident · {incident.incident_id}<span>Open incident</span></button>}
         <BuildRecord record={qualityRecord} currentStation={selectedVehicle.current_station}/>
         <details className="app-details technical-quality"><summary>View technical evidence <ChevronDown size={14}/></summary><div className="quality-grid"><Operation label="Confidence" value={`${Math.round(prediction.confidence * 100)}%`}/><Operation label="Inspection point" value={prediction.recommended_inspection_point ?? "Standard EOL"}/><Operation label="Model" value={prediction.model_version}/><Operation label="Predictions retained" value={qualityRecord.prediction_history.length.toString()}/></div><div className="risk-sequence">{qualityRecord.prediction_history.map((item) => <div key={`${item.station_at_prediction}-${item.prediction_timestamp}`} className={item.risk >= .6 ? "inspect" : item.risk >= .35 ? "watch" : "normal"}><i style={{height:`${Math.max(8,item.risk*44)}px`}}/><small>{item.station_at_prediction}</small><b>{Math.round(item.risk*100)}%</b></div>)}</div>{qualityRecord.inspection_result && <div className={`inspection-result ${qualityRecord.inspection_result.result.startsWith("FAIL") ? "failed" : "passed"}`}><span>End-of-Line outcome</span><b>{qualityRecord.inspection_result.result}</b></div>}</details>
-      </div> : <div className="quality-empty-detail"><Shield size={32}/><span>QUALITY OVERVIEW</span><p>{reviewCount ? "Select a vehicle to review" : "No vehicle needs extra inspection right now."}</p><small>{qualityVehicles.length ? `LineLens is monitoring ${qualityVehicles.length} active vehicle${qualityVehicles.length === 1 ? "" : "s"}.` : "LineLens is waiting for vehicles to enter the quality workflow."}</small>{qualityVehicles.length > 0 && <button className="calm-action" onClick={() => onFilter("ALL")}>View all monitored vehicles</button>}<small className="calm-note">A calm screen is a result, not a missing result. New quality findings will appear here when evidence warrants attention.</small></div>}
+      </div> : <div className="quality-empty-detail"><Shield size={32}/><span>QUALITY OVERVIEW</span><p>{reviewCount ? "Select a vehicle to review" : "No vehicle needs extra inspection right now."}</p><small>{qualityVehicles.length ? `LineLens is monitoring ${qualityVehicles.length} active vehicle${qualityVehicles.length === 1 ? "" : "s"}.` : "LineLens is waiting for vehicles to enter the quality workflow."}</small>{qualityVehicles.length > 0 && <button className="calm-action" onClick={() => onFilter("ALL")}>View all monitored vehicles</button>}<div className="quality-calm-points"><div><span>Watching for</span><b>Process drift</b><small>Cycle and tool evidence that moves away from normal.</small></div><div><span>Tracing through</span><b>Build history</b><small>Station, tool, lot, and retained process evidence.</small></div><div><span>Escalating only when</span><b>Evidence warrants review</b><small>Risk supports an inspection priority, not a defect verdict.</small></div></div><small className="calm-note">A calm screen is a result, not a missing result. New quality findings will appear here when evidence warrants attention.</small></div>}
     </section>
     <aside className="quality-right quality-simple-right">
       <section data-tour="common-pattern" className="genealogy-panel common-pattern-simple"><div className="twin-section-title"><span>Common pattern</span><b className="inferred-tag">{genealogy?.cohort_size ?? 0} risky</b></div>{primaryFactor ? <><p><b>{primaryFactor.support} of {genealogy?.cohort_size} risky vehicles</b> passed through:</p><h2>{primaryFactor.factor_name}</h2>{factors.length > 1 && <div className="also-common"><span>Also common</span>{factors.slice(1,3).map((factor) => <b key={factor.factor_id}>{factor.factor_name}</b>)}</div>}<details className="app-details"><summary>View analysis <ChevronDown size={14}/></summary>{factors.slice(0,4).map((factor) => <div className="analysis-row" key={factor.factor_id}><b>{factor.factor_name}</b><small>{factor.risk_lift.toFixed(1)}× more common · {factor.support}/{genealogy?.cohort_size ?? factor.support} vehicles · baseline {(factor.baseline_prevalence*100).toFixed(1)}%</small></div>)}<small>Patterns indicate where to investigate; they do not prove cause.</small></details></> : <div className="genealogy-empty"><CheckCircle2 size={17}/><span>No shared problem pattern.<small>LineLens continues comparing tools, cells and component lots.</small></span></div>}</section>
-      {metrics && <section data-tour="quality-validation" className="quality-metrics validation-simple-card"><div className="twin-section-title"><span>How well is LineLens doing?</span></div><div className="validation-primary"><div><small>Warnings checked</small><b>{warningsChecked}</b></div><div><small>Correct warnings</small><b>{metrics.precision == null ? "Awaiting outcomes" : `${Math.round(metrics.precision*100)}%`}</b></div><div><small>Median time gained</small><b>{metrics.prediction_lead_time_mean == null ? "Awaiting outcomes" : `${(metrics.prediction_lead_time_mean/60).toFixed(1)} min`}</b></div></div><details className="app-details"><summary>View technical metrics <ChevronDown size={14}/></summary><div className="metrics-grid"><Operation label="Predictions" value={metrics.total_predictions.toString()}/><Operation label="Defect rate" value={`${(metrics.defect_rate*100).toFixed(1)}%`}/><Operation label="Precision" value={metrics.precision == null ? "—" : `${(metrics.precision*100).toFixed(1)}%`}/><Operation label="Recall" value={metrics.recall == null ? "—" : `${(metrics.recall*100).toFixed(1)}%`}/></div></details></section>}
+      {metrics && <section data-tour="quality-validation" className="quality-metrics validation-simple-card"><div className="twin-section-title"><span>Quality-warning validation</span></div><p className="validation-explainer">Compares earlier LineLens warnings with the later simulated End-of-Line outcome. It is evidence about warning quality, not a factory performance score.</p><div className="validation-primary"><div><small>Warnings with EOL outcome</small><b>{warningsChecked}</b></div><div><small>Confirmed after EOL</small><b>{metrics.precision == null ? "Awaiting outcomes" : `${Math.round(metrics.precision*100)}%`}</b></div><div><small>Earlier than EOL</small><b>{metrics.prediction_lead_time_mean == null ? "Awaiting outcomes" : `${(metrics.prediction_lead_time_mean/60).toFixed(1)} min`}</b></div></div><details className="app-details"><summary>View validation details <ChevronDown size={14}/></summary><p className="validation-detail-note">All values are calculated from completed synthetic inspection outcomes in this session.</p><div className="metrics-grid"><Operation label="Warnings issued" value={metrics.total_predictions.toString()}/><Operation label="Confirmed EOL failure rate" value={`${(metrics.defect_rate*100).toFixed(1)}%`}/><Operation label="Confirmed-warning rate" value={metrics.precision == null ? "—" : `${(metrics.precision*100).toFixed(1)}%`}/><Operation label="Detected-failure rate" value={metrics.recall == null ? "—" : `${(metrics.recall*100).toFixed(1)}%`}/></div></details></section>}
     </aside>
   </section>;
 }
@@ -2158,6 +2167,9 @@ function MachinesView({
   onSelect: (id: string) => void;
   onGuide: () => void;
 }) {
+  const directDataStations = stations.filter((station) => station.sensor_mode === "FULL TELEMETRY").length;
+  const inferredStations = stations.length - directDataStations;
+  const nonRunningStations = stations.filter((station) => station.operational_state !== "RUNNING").length;
   return (
     <section data-tour="station-directory" className="simple-page">
       <div className="page-title-row">
@@ -2170,6 +2182,11 @@ function MachinesView({
             : "Observed view shows only the factory signals received directly."}
         </p>
         </div><button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button></div>
+      <section className="station-directory-summary" aria-label="Station directory summary">
+        <div><span>Direct telemetry</span><b>{directDataStations} stations</b><small>Fresh cycle measurements are available.</small></div>
+        <div><span>Estimated with limited data</span><b>{inferredStations} stations</b><small>Twin confidence shows the strength of the evidence.</small></div>
+        <div><span>Current operating state</span><b>{nonRunningStations ? `${nonRunningStations} not running` : "All stations running"}</b><small>Select a row to review the station in context on Dashboard.</small></div>
+      </section>
       <div className="machine-table twin-machine-table">
         <div className="machine-head">
           <span>Station</span>
@@ -2275,6 +2292,10 @@ function AnalyticsView({
           </select>
         </label>
       </div>
+      <section className="trends-reading-order" aria-label="How to read trends">
+        <div><span>Reading order</span><b>Cycle time → Difference from normal → Bottleneck risk → Queue trajectory</b></div>
+        <small>Use several adjacent changes to identify a trend. One point by itself is not a diagnosis.</small>
+      </section>
       <TwinCycleChart station={station} />
       <ResidualTrendChart station={station} />
       <div className="forecast-analytics-grid">
@@ -2563,16 +2584,16 @@ function ChartCard({
     </section>
   );
 }
-function ActivityDrawer({
+function ActivityView({
   events,
   forecastAlerts,
   validation,
-  onClose,
+  onGuide,
 }: {
   events: OperationalEvent[];
   forecastAlerts: ForecastAlert[];
   validation: ForecastValidation | null;
-  onClose: () => void;
+  onGuide: () => void;
 }) {
   const [eventFilter, setEventFilter] = useState<"IMPORTANT" | "ALL">("IMPORTANT");
   const combined = [
@@ -2590,16 +2611,15 @@ function ActivityDrawer({
     ? combined.filter((event) => event.forecast || event.severity !== "INFO")
     : combined;
   return (
-    <div className="drawer-backdrop activity-backdrop" onClick={onClose}><aside data-tour="event-log" className="app-drawer activity-drawer" onClick={(event) => event.stopPropagation()}>
-      <header><div><span>Detailed factory history</span><h2>Activity</h2></div><button aria-label="Close activity" onClick={onClose}><X size={17}/></button></header>
-      <section className="activity-content">
-      <div>
-        <p>
-          Important events first: warnings, quality findings, incidents and sensor issues.
-        </p>
-      </div>
-      <div className="event-filter" aria-label="Event Log filter"><button className={eventFilter === "IMPORTANT" ? "active" : ""} onClick={() => setEventFilter("IMPORTANT")}>IMPORTANT</button><button className={eventFilter === "ALL" ? "active" : ""} onClick={() => setEventFilter("ALL")}>ALL EVENTS</button></div>
-      <div className="events-log">
+    <section data-tour="event-log" className="simple-page activity-page">
+      <header className="activity-heading">
+        <div><span>Factory history</span><h1>Activity</h1><p>Review meaningful events from the current simulation session. Routine movement is available when you need the full history.</p></div>
+        <div className="activity-heading-actions"><button className="page-guide-trigger" onClick={onGuide}><HelpCircle size={13}/>Guide this page</button><div className="activity-summary"><span>Showing</span><b>{eventFilter === "IMPORTANT" ? "Important events" : "All events"}</b><small>{visibleEvents.length} item{visibleEvents.length === 1 ? "" : "s"} in this view</small></div></div>
+      </header>
+      <section className="activity-toolbar" aria-label="Activity filters"><div className="event-filter"><button className={eventFilter === "IMPORTANT" ? "active" : ""} onClick={() => setEventFilter("IMPORTANT")}>Important</button><button className={eventFilter === "ALL" ? "active" : ""} onClick={() => setEventFilter("ALL")}>All events</button></div><small>Important includes forecast alerts, warnings, quality findings, incidents, and sensor issues.</small></section>
+      <section className="activity-feed">
+        <header><span>Session event log</span><b>{visibleEvents.length} events</b></header>
+        <div className="events-log">
         {visibleEvents.length === 0 ? <div className="event-log-empty"><CheckCircle2 size={28}/><b>No important events yet</b><small>Routine vehicle movement is available under All events. Important warnings will appear here automatically.</small></div> : visibleEvents.map((event) => (
           <article key={event.event_id}>
             <i className={event.severity.toLowerCase()} />
@@ -2614,9 +2634,10 @@ function ActivityDrawer({
             <span>{event.severity}</span>
           </article>
         ))}
-      </div>
+        </div>
+      </section>
       {validation && (
-        <section className="validation-summary">
+        <section data-tour="activity-validation" className="validation-summary activity-validation">
           <span>Synthetic forecast validation</span>
           <b>
             {validation.prediction_lead_time_seconds !== null
@@ -2634,6 +2655,6 @@ function ActivityDrawer({
           </small>
         </section>
       )}
-      </section></aside></div>
+    </section>
   );
 }
