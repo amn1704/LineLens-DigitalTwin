@@ -614,6 +614,8 @@ export default function App() {
         </div>
         <div className="header-utilities">
           <span className={state.simulation.is_running ? "live-badge" : "paused-badge"}><i />{state.simulation.is_running ? "Running" : "Paused"}</span>
+          <button className={`header-action ${simulationOpen ? "active" : ""}`} onClick={() => { setDemoOpen(false); setViewOptionsOpen(false); setSimulationOpen((open) => !open); }}><Timer size={14}/> Simulation</button>
+          <button className={`header-action ${demoOpen ? "active" : ""}`} onClick={() => { setSimulationOpen(false); setViewOptionsOpen(false); setDemoOpen(true); }}><FlaskConical size={14}/> Demo</button>
           <button className="header-action" onClick={() => setHelpOpen((open) => !open)}><HelpCircle size={14}/> Help</button>
         </div>
       </header>
@@ -769,6 +771,14 @@ export default function App() {
                   <Footprints size={15} />
                 )}
               </button>
+              <span className="tool-divider" />
+              <button
+                aria-label="Toggle fullscreen"
+                title="Fullscreen"
+                onClick={() => void toggleFullscreen()}
+              >
+                <Expand size={15} />
+              </button>
               <button
                 className={viewOptionsOpen ? "active" : ""}
                 aria-label="More view controls"
@@ -780,9 +790,8 @@ export default function App() {
               </button>
             </div>
             {viewOptionsOpen && <aside className="view-options-popover" aria-label="Additional view controls">
-              <header><span>More controls</span><button aria-label="Close more controls" onClick={() => setViewOptionsOpen(false)}><X size={14}/></button></header>
-              <section><span>View</span><button onClick={() => { setCameraMode(cameraMode === "flythrough" ? "orbit" : "flythrough"); setViewOptionsOpen(false); }}><Route size={15}/><div><b>{cameraMode === "flythrough" ? "Stop flythrough" : "Factory flythrough"}</b><small>Automatic production-line tour</small></div></button><button onClick={() => { void toggleFullscreen(); setViewOptionsOpen(false); }}><Expand size={15}/><div><b>Fullscreen</b><small>Focus on the factory view</small></div></button></section>
-              <section><span>Simulation</span><button onClick={() => { setSimulationOpen(true); setViewOptionsOpen(false); }}><Timer size={15}/><div><b>Simulation controls</b><small>Pause, reset, or change speed</small></div></button><button onClick={() => { setDemoOpen(true); setViewOptionsOpen(false); }}><FlaskConical size={15}/><div><b>Synthetic demo</b><small>Run a safe preset scenario</small></div></button></section>
+              <header><span>View options</span><button aria-label="Close view options" onClick={() => setViewOptionsOpen(false)}><X size={14}/></button></header>
+              <section><button onClick={() => { setCameraMode(cameraMode === "flythrough" ? "orbit" : "flythrough"); setViewOptionsOpen(false); }}><Route size={15}/><div><b>{cameraMode === "flythrough" ? "Stop flythrough" : "Factory flythrough"}</b><small>Automatic production-line tour</small></div></button></section>
             </aside>}
             {cameraMode !== "walk" && incidents.slice(0, 1).map((incident) => (
               <button key={incident.incident_id} data-tour="incident-summary" className="dashboard-quality-summary" onClick={() => openIncident(incident)}>
