@@ -656,26 +656,26 @@ export default function App() {
             prediction={prediction}
           />}
           <section ref={stageRef} data-tour="factory-canvas" className={`twin-stage camera-${cameraMode}`}>
-            <div className="scene-meta">
-              <button className="page-guide-trigger" onClick={() => startGuideChapter(GUIDE_CHAPTERS[0])}><HelpCircle size={13}/> Guide this page</button>
-              <span className={dataView === "forecast" ? "forecast-label" : ""}>
-                {dataView === "forecast"
-                  ? "Forecast view"
-                  : cameraMode === "orbit"
-                    ? "Orbit view"
-                    : cameraMode === "walk"
-                      ? "Walk mode"
-                    : "Factory flythrough"}
-              </span>
-              <small>
-                {dataView === "forecast"
-                  ? `+${forecastHorizon / 60} min · No intervention · simulation-derived`
-                  : cameraMode === "walk"
-                    ? "Click scene · WASD move · Shift faster · Esc exit"
-                    : cameraMode === "flythrough"
-                      ? "Automatic camera tour of the production line · Esc cancels"
-                      : `Drag to orbit · Scroll to zoom · ${state.simulation.speed}× twin data`}
-              </small>
+            {cameraMode !== "walk" && <div className="scene-meta">
+              <div className="scene-meta-heading">
+                <div>
+                  <span className={dataView === "forecast" ? "forecast-label" : ""}>
+                    {dataView === "forecast"
+                      ? "Forecast view"
+                      : cameraMode === "orbit"
+                        ? "Orbit view"
+                        : "Factory flythrough"}
+                  </span>
+                  <small>
+                    {dataView === "forecast"
+                      ? `+${forecastHorizon / 60} min · No intervention · simulation-derived`
+                      : cameraMode === "flythrough"
+                        ? "Automatic camera tour of the production line · Esc cancels"
+                        : "Drag to orbit · Scroll to zoom"}
+                  </small>
+                </div>
+                <button className="page-guide-trigger" onClick={() => startGuideChapter(GUIDE_CHAPTERS[0])}><HelpCircle size={13}/> Guide this page</button>
+              </div>
               <div data-tour="forecast-control" className="data-view-switch">
                 <button
                   className={dataView === "observed" ? "active" : ""}
@@ -719,7 +719,7 @@ export default function App() {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
             <div data-tour="viewport-controls" className="scene-tools">
               <button
                 aria-label="Reset view"
@@ -783,7 +783,7 @@ export default function App() {
                 <Expand size={15} />
               </button>
             </div>
-            {incidents.slice(0, 1).map((incident) => (
+            {cameraMode !== "walk" && incidents.slice(0, 1).map((incident) => (
               <button key={incident.incident_id} data-tour="incident-summary" className="dashboard-quality-summary" onClick={() => openIncident(incident)}>
                 <ClipboardCheck size={15} />
                 <span><b>{incident.type === "QUALITY" ? "Quality watch" : "Early warning"}</b>{incident.summary} · View incident</span>
@@ -813,9 +813,9 @@ export default function App() {
               )}
               qualityScenarioActive={state.simulation.quality_scenario_active}
             />
-            {(state.simulation.active_scenario || state.simulation.quality_scenario_active) && <span className="demo-active-small"><i />Demo · {state.simulation.quality_scenario_active ? "Weld quality" : "Bottleneck"}</span>}
-            {cameraMode === "walk" && <div className="walk-hud"><b>Walk mode</b><span>WASD / arrows move · Mouse look · Shift faster · Esc exit</span><button onClick={() => setCameraMode("orbit")}>Exit walk</button></div>}
-            <div className="asset-overlay">
+            {cameraMode !== "walk" && (state.simulation.active_scenario || state.simulation.quality_scenario_active) && <span className="demo-active-small"><i />Demo · {state.simulation.quality_scenario_active ? "Weld quality" : "Bottleneck"}</span>}
+            {cameraMode === "walk" && <div className="walk-hud" role="status"><div><span>Walk mode</span><b>Explore the factory floor</b><small>Click the factory to look around · WASD / arrows move · Shift faster · Esc exits</small></div><button onClick={() => setCameraMode("orbit")}>Exit walk</button></div>}
+            {cameraMode !== "walk" && <div className="asset-overlay">
               {selectedVehicle ? (
                 <VehicleOverlay
                   vehicle={selectedVehicle}
@@ -829,7 +829,7 @@ export default function App() {
                   forecast={selectedForecast}
                 />
               )}
-            </div>
+            </div>}
           </section>
           {cameraMode !== "walk" && <RightPanel
             state={state}

@@ -280,8 +280,14 @@ function CameraRig({
   }, [selectedIndex, mode]);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
+      if (mode === "walk" && ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Escape"].includes(event.code)) {
+        event.preventDefault();
+      }
       keys.current.add(event.code);
-      if (event.code === "Escape" && mode !== "orbit") onModeChange("orbit");
+      if (event.code === "Escape" && mode !== "orbit") {
+        if (document.pointerLockElement === gl.domElement) document.exitPointerLock();
+        onModeChange("orbit");
+      }
     };
     const up = (event: KeyboardEvent) => keys.current.delete(event.code);
     const move = (event: MouseEvent) => {
@@ -311,12 +317,28 @@ function CameraRig({
     };
   }, [gl, mode, onModeChange]);
   useEffect(() => {
+    if (mode !== "walk") return;
+    const capturePointer = () => {
+      if (document.pointerLockElement !== gl.domElement) {
+        try {
+          const request = gl.domElement.requestPointerLock?.() as Promise<void> | void;
+          if (request && typeof request.catch === "function") void request.catch(() => undefined);
+        } catch { /* Walk remains usable with keyboard controls. */ }
+      }
+    };
+    gl.domElement.tabIndex = -1;
+    gl.domElement.addEventListener("pointerdown", capturePointer);
+    return () => gl.domElement.removeEventListener("pointerdown", capturePointer);
+  }, [gl, mode]);
+  useEffect(() => {
     const control = controls.current;
     if (!control) return;
     if (mode === "walk") {
       savedPosition.current.copy(camera.position);
       savedTarget.current.copy(control.target);
-      walkPosition.current.set(-12.8, 1.68, 0);
+      // A central aisle at a natural standing eye-height; the equipment stays
+      // reachable while the starting point never overlaps a machine volume.
+      walkPosition.current.set(-12.4, 1.68, 0);
       lockedOnce.current = false;
       setControlsEnabled(false);
       // Pointer lock must start from an intentional scene click, not on mode entry.
@@ -343,8 +365,8 @@ function CameraRig({
     if (mode === "walk") {
       const step =
         (keys.current.has("ShiftLeft") || keys.current.has("ShiftRight")
-          ? 3.4
-          : 1.9) * Math.min(delta, 0.05);
+          ? 3.7
+          : 2.15) * Math.min(delta, 0.05);
       const forward = new Vector3(
           -Math.sin(yaw.current),
           0,
@@ -369,7 +391,7 @@ function CameraRig({
       candidate.y = 1.68;
       const blocked = CELLS.some(
         ([x, , z]) =>
-          Math.abs(candidate.x - x) < 1.48 && Math.abs(candidate.z - z) < 1.18,
+          Math.abs(candidate.x - x) < 1.72 && Math.abs(candidate.z - z) < 1.42,
       );
       if (!blocked) walkPosition.current.copy(candidate);
       camera.position.copy(walkPosition.current);
@@ -1627,11 +1649,6 @@ export function FactoryScene(props: FactorySceneProps) {
       camera={{ position: DEFAULT_CAMERA.toArray(), fov: 39 }}
       dpr={[1, 1.55]}
       gl={{ antialias: true, toneMappingExposure: 1.05 }}
-      onPointerDown={(event) => {
-        if (props.cameraMode !== "walk") return;
-        const canvas = event.currentTarget as unknown as HTMLCanvasElement;
-        if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
-      }}
     >
       <Scene {...props} />
     </Canvas>
