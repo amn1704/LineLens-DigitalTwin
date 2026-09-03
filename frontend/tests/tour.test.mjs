@@ -38,9 +38,11 @@ test("tour controller moves back, forward, and completes", () => {
 
 test("product guide covers every important workspace with valid targets", () => {
   assert.deepEqual(GUIDE_CHAPTERS.map((chapter) => chapter.id), ["dashboard", "quality", "incidents", "stations", "trends"]);
+  const expectedStepCounts = { dashboard: 7, quality: 7, incidents: 6, stations: 5, trends: 6 };
   for (const chapter of GUIDE_CHAPTERS) {
-    assert.ok(chapter.steps.length >= 2, `${chapter.label} needs a useful guide`);
-    for (const step of chapter.steps) assert.ok(step.target && step.title && step.text);
+    assert.equal(chapter.steps.length, expectedStepCounts[chapter.id], `${chapter.label} guide should remain complete`);
+    assert.ok(chapter.summary, `${chapter.label} needs a plain-language purpose`);
+    for (const step of chapter.steps) assert.ok(step.target && step.title && step.text && step.hint, `${chapter.label} step needs a target, explanation, and action`);
   }
 });
 
