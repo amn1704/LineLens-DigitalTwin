@@ -18,6 +18,7 @@ incident engine, 3D scene, and frontend components were developed independently.
 | Three.js | MIT | https://threejs.org |
 | React Three Fiber | MIT | https://github.com/pmndrs/react-three-fiber |
 | Drei | MIT | https://github.com/pmndrs/drei |
+| three-stdlib | MIT | https://github.com/pmndrs/three-stdlib |
 | Lucide React | ISC | https://lucide.dev |
 | Vite | MIT | https://vitejs.dev |
 | TypeScript | Apache-2.0 | https://www.typescriptlang.org |
@@ -25,6 +26,5 @@ incident engine, 3D scene, and frontend components were developed independently.
 | Uvicorn | BSD-3-Clause | https://www.uvicorn.org |
 | Pydantic | MIT | https://docs.pydantic.dev |
 | NumPy | BSD-3-Clause | https://numpy.org |
-| pandas | BSD-3-Clause | https://pandas.pydata.org |
 | scikit-learn | BSD-3-Clause | https://scikit-learn.org |
 | pytest | MIT | https://docs.pytest.org |

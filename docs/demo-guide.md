@@ -1,6 +1,6 @@
 # Demonstrating LineLens
 
-Run the backend on port 8102 and the frontend with Vite. Use **Reset demo** in the Dashboard viewport before each scenario; reset returns the simulator to its healthy warm baseline.
+Run the backend on port 8102 and the frontend with Vite. Open **Demo** in the top bar and use **Reset demo** before each scenario; reset returns the simulator to its healthy warm baseline. The separate **Simulation** control provides pause, resume, speed, and reset.
 
 ## Healthy factory
 
@@ -8,7 +8,7 @@ Open Dashboard, choose a station, and compare Observed, Twin, and Forecast. Use 
 
 ## Bottleneck warning
 
-Open **Demo scenarios** from the Dashboard viewport and choose **Bottleneck**. The local simulator generates persistent Chassis Marriage drift, then the prediction service produces the warning and computed no-intervention forecast. Open Incidents to show the evidence and recommended human checks.
+Open **Demo** from the top bar and choose **Bottleneck**. The local simulator generates persistent Chassis Marriage drift, then the prediction service produces the warning and computed no-intervention forecast. Open Incidents to show the evidence and recommended human checks.
 
 ## Vehicle quality
 

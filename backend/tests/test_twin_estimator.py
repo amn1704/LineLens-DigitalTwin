@@ -1,3 +1,5 @@
+"""Twin estimation, observation boundaries, and simulation invariants."""
+
 from __future__ import annotations
 
 import inspect

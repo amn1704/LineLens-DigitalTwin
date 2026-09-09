@@ -1,4 +1,4 @@
-"""Phase 6 quick demos must advance the real simulator, not fabricated UI values."""
+"""Quick demos must advance the real simulator, not fabricated UI values."""
 
 import inspect
 

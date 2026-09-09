@@ -34,5 +34,5 @@ During a data gap, the Twin retains its last known estimate while confidence dec
 
 Validation requires time to elapse so predictions can be compared to actual outcomes.
 
-1. **For Bottlenecks**: Open the Demo menu, select *Simulate process drift* for Chassis Marriage. Wait for the +5m and +10m checkpoints to pass. The validation metrics will populate in the right panel and the About/Validation drawer.
-2. **For Quality**: Open the Quality tab, start *Simulate weld drift*, and wait for the exposed vehicles to reach the End-of-Line station. Validation metrics will appear in the Quality metrics panel once ground truth is revealed.
+1. **For Bottlenecks**: Open **Demo** in the top bar and select **Bottleneck**. If the demonstration leaves the simulator paused, use **Simulation → Resume** to reach later forecast horizons. Review forecast validation in Activity or **Help → Prediction validation**; pending outcomes are not yet evaluated.
+2. **For Quality**: Open **Demo → Weld quality issue**. Review the vehicle cohort in Quality and allow exposed vehicles to reach End-of-Line inspection. The **Quality-warning validation** panel shows evaluated warnings and lead time once outcomes are available.

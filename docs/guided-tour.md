@@ -19,4 +19,4 @@ The Bottleneck and Weld steps call the same local simulator and backend pipeline
 
 ## Page Guides
 
-Dashboard, Quality, Incidents, Stations, and Trends each provide a **Guide this page** button. These short guides explain the controls and evidence visible in their current workspace without changing factory state.
+Dashboard, Quality, Incidents, Activity, Stations, and Trends each provide a **Guide this page** button. These short guides explain the controls and evidence visible in their current workspace.

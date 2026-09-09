@@ -11,7 +11,7 @@ from backend.app.prediction.snapshot import snapshot_from_twin
 from backend.app.simulation import AssemblyLineSimulator
 
 
-class Phase3PredictionTests(unittest.TestCase):
+class PredictionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.simulator = AssemblyLineSimulator()
         self.simulator.pause()

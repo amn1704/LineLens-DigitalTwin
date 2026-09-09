@@ -9,17 +9,22 @@ __pycache__/
 # Build outputs
 frontend/dist/
 *.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Test / coverage caches
 .pytest_cache/
 .mypy_cache/
 .coverage
+.coverage.*
+coverage/
 htmlcov/
 .ruff_cache/
 
 # Environment
 .env
 .env.*
+!.env.example
 
 # OS files
 .DS_Store
@@ -38,3 +43,5 @@ desktop.ini
 
 # Scratch / development
 scratch/
+playwright-report/
+test-results/

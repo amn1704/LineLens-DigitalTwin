@@ -4,7 +4,7 @@
 
 LineLens helps a production team see a developing flow or quality problem earlier, understand the evidence behind it, and organise a human response. It is a working prototype created for the Accenture Innovation Challenge 2026.
 
-![Live LineLens Dashboard](assets/screenshots/live-dashboard.png)
+![Live LineLens Dashboard](docs/images/live-dashboard.png)
 
 > **Prototype boundary:** Every signal, vehicle, process variation, and outcome in this repository is synthetic. LineLens is decision support only: it does not connect to a plant, PLC, MES, or factory equipment, and it never issues control commands.
 
@@ -34,23 +34,23 @@ LineLens brings that context together. It keeps a current estimate of the line, 
 4. **Trace quality.** Open Quality to review a vehicle’s build evidence and any shared pattern across a risky cohort.
 5. **Keep people in control.** Use Incidents to document acknowledgement, investigation, checks, notes, and resolution.
 
-The built-in **Help & guidance** panel provides a five-minute product tour and focused guides for Dashboard, Quality, Incidents, Stations, and Trends. Synthetic Demo scenarios are available only to demonstrate the local simulation pipeline; reset returns the prototype to a healthy simulated state.
+The built-in **Help & guidance** panel provides a five-minute product tour and focused guides for Dashboard, Quality, Incidents, Activity, Stations, and Trends. The top-bar **Demo** button opens synthetic scenarios; **Simulation** opens pause, speed, and reset controls. Fullscreen is available directly on the factory control rail.
 
 ## Live product captures
 
-The following screenshots were captured from the locally running LineLens application. They show the current interface and synthetic simulation state rather than illustrative mock-ups.
+These screenshots were captured from a locally running LineLens application using synthetic simulation data. They are representative product captures; control placement may differ as the interface is refined.
 
 | Factory overview | Quality monitoring |
 | --- | --- |
-| ![Live factory overview](assets/screenshots/live-dashboard.png) | ![Live quality monitoring](assets/screenshots/live-quality.png) |
+| ![Live factory overview](docs/images/live-dashboard.png) | ![Live quality monitoring](docs/images/live-quality.png) |
 
 | Incident workspace | Activity history |
 | --- | --- |
-| ![Live incident workspace](assets/screenshots/live-incidents.png) | ![Live activity history](assets/screenshots/live-activity.png) |
+| ![Live incident workspace](docs/images/live-incidents.png) | ![Live activity history](docs/images/live-activity.png) |
 
 | Station trends |
 | --- |
-| ![Live station trends](assets/screenshots/live-trends.png) |
+| ![Live station trends](docs/images/live-trends.png) |
 
 ## How it works
 
@@ -96,7 +96,7 @@ For technical detail, read the [architecture](docs/architecture.md), [validation
 ### Requirements
 
 - Python 3.11 or newer
-- Node.js 20 or newer and npm
+- Node.js 24 or newer and npm (the tour tests import TypeScript directly)
 - Git
 
 No environment variables, external services, database, or API keys are required for the local prototype.
@@ -146,6 +146,7 @@ Open the local URL printed by Vite (normally `http://127.0.0.1:5173`). The Vite 
 From the repository root, with the backend virtual environment active:
 
 ```bash
+python -m pip install -r backend/requirements-dev.txt
 python -m pytest backend/tests -v
 ```
 
@@ -178,13 +179,58 @@ The frontend build performs TypeScript checking before creating the production b
 ## Repository structure
 
 ```text
-assets/screenshots/    Current live README captures and release screenshots
-backend/app/           FastAPI simulator, Twin, prediction, quality, and incidents
-backend/tests/         Backend test suite
-frontend/src/          React and Three.js application
-frontend/tests/        Product-tour tests
-docs/                  Architecture, validation, demo, and assumption notes
+LineLens-DigitalTwin/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                    # FastAPI application and HTTP endpoints
+│   │   ├── models.py                  # Shared simulation and observation models
+│   │   ├── simulation.py              # Synthetic automotive assembly line
+│   │   ├── twin/                      # State estimation and station baselines
+│   │   ├── prediction/                # Flow risk and forward simulation
+│   │   ├── quality/                   # Vehicle evidence, model, and genealogy
+│   │   │   └── quality_model_artifact.json  # Required versioned model parameters
+│   │   └── incidents/                 # Human response workflow and playbooks
+│   ├── tests/
+│   │   ├── test_twin_estimator.py
+│   │   ├── test_prediction.py
+│   │   ├── test_quality.py
+│   │   ├── test_incidents.py
+│   │   └── test_demo.py
+│   ├── requirements.txt              # Application dependencies
+│   └── requirements-dev.txt          # Application dependencies plus pytest
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                   # Workspaces and application controls
+│   │   ├── GuidedTour.tsx            # Tour and page-guide interface
+│   │   ├── tour.ts                   # Guide content and progress helpers
+│   │   ├── api.ts                    # Backend requests
+│   │   ├── types.ts                  # Shared frontend types
+│   │   ├── main.tsx                  # React entry point
+│   │   ├── styles.css                # Application styles
+│   │   └── twin/FactoryScene.tsx      # Interactive Three.js factory
+│   ├── tests/tour.test.mjs
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json             # Reproducible npm dependency resolution
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   └── vite.config.ts                # Development proxy and frontend build
+├── docs/
+│   ├── images/                       # Five product screenshots used above
+│   ├── architecture.md
+│   ├── demo-guide.md
+│   ├── guided-tour.md
+│   ├── prototype-assumptions.md
+│   └── validation.md
+├── .gitignore
+├── ATTRIBUTIONS.md
+├── LICENSE
+└── README.md
 ```
+
+Package initializer files (`__init__.py`) are omitted from this overview. Tests, technical documentation, attribution, and model parameters are retained because they support verification, maintenance, and use of the project.
+
+Local development creates `backend/.venv/`, `frontend/node_modules/`, `frontend/dist/`, and Python/test caches. These are ignored by Git and are not part of the source distribution. Keep private notes, exports, and one-off experiments outside the project; keep reusable checks in the test folders. Do not remove `package-lock.json` or the quality model artifact when preparing a clone for another system.
 
 ## License and attribution
 

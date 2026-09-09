@@ -85,4 +85,4 @@ The UI is a React 18 application using Vite and React Three Fiber (Three.js) for
 - **Incidents**: Workflow response for identified production and quality issues.
 
 ## Configuration
-Station specifications, nominal takt times, incoming queue capacities, and assigned sensor maturity tiers are defined within the backend simulation engine (`backend/app/simulation.py`). The application configuration and port definitions are isolated in environment configuration logic.
+Station specifications, nominal takt times, incoming queue capacities, and assigned sensor maturity tiers are defined in `backend/app/simulation.py`. The backend port is selected when starting Uvicorn; `frontend/vite.config.ts` proxies `/api` to port 8102 during development. The local prototype requires no environment file or external service credentials.

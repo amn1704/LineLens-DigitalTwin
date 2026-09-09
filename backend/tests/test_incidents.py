@@ -1,4 +1,4 @@
-"""Phase 5: deterministic, human-in-the-loop incident workflow coverage."""
+"""Deterministic, human-in-the-loop incident workflow coverage."""
 
 from backend.app.incidents import IncidentService
 from backend.app.incidents.models import IncidentStatus, IncidentType
