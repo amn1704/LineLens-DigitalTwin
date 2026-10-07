@@ -1,6 +1,11 @@
+import os
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .models import HistoryPoint, OperationalEvent, Station, StationObservation, TwinState, TwinSynchronization, Vehicle, VehicleThread
 from .simulation import AssemblyLineSimulator
@@ -8,8 +13,10 @@ from .prediction import PredictionService
 from .prediction.models import PredictionState
 from .incidents import IncidentService
 from .incidents.models import Incident
+from .impact import ImpactAssumptions, ImpactService
+from .impact.models import ImpactReport
 
-app = FastAPI(title="LineLens API", version="0.5.0")
+app = FastAPI(title="LineLens API", version="0.6.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -18,12 +25,13 @@ app.add_middleware(
         "http://127.0.0.1:5176",
         "http://localhost:5176",
     ],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["*"],
 )
 simulator = AssemblyLineSimulator()
 prediction_service = PredictionService()
 incident_service = IncidentService()
+impact_service = ImpactService()
 
 
 class SpeedRequest(BaseModel):
@@ -47,17 +55,17 @@ class DemoAdvanceRequest(BaseModel):
     seconds: float
 
 
-def refresh_incidents() -> list[Incident]:
+def evaluate_line() -> tuple[TwinState, PredictionState, list[dict], list[Incident]]:
     """Evaluate existing production/quality signals; this has no simulator control path."""
     state = simulator.state()
     prediction = prediction_service.prediction(state, "FA-02")
-    incident_service.evaluate(
-        state,
-        prediction,
-        simulator.quality_monitored_vehicles(),
-        simulator.quality_genealogy(),
-    )
-    return incident_service.list_incidents()
+    quality_rows = simulator.quality_monitored_vehicles()
+    incident_service.evaluate(state, prediction, quality_rows, simulator.quality_genealogy())
+    return state, prediction, quality_rows, incident_service.list_incidents()
+
+
+def refresh_incidents() -> list[Incident]:
+    return evaluate_line()[3]
 
 
 @app.get("/api/state", response_model=TwinState)
@@ -226,6 +234,26 @@ def get_quality_metrics() -> dict:
     return simulator.quality_metrics()
 
 
+@app.get("/api/impact", response_model=ImpactReport)
+def get_impact() -> ImpactReport:
+    state, prediction, quality_rows, incidents = evaluate_line()
+    return impact_service.report(
+        state=state, prediction=prediction, energy=simulator.energy(),
+        quality_rows=quality_rows, quality_metrics=simulator.quality_metrics(), incidents=incidents,
+    )
+
+
+@app.get("/api/impact/assumptions", response_model=ImpactAssumptions)
+def get_impact_assumptions() -> ImpactAssumptions:
+    return impact_service.assumptions
+
+
+@app.put("/api/impact/assumptions", response_model=ImpactAssumptions)
+def put_impact_assumptions(payload: ImpactAssumptions) -> ImpactAssumptions:
+    """Replace the in-memory illustrative assumptions; they reset when the backend restarts."""
+    return impact_service.set_assumptions(payload)
+
+
 @app.get("/api/incidents", response_model=list[Incident])
 def get_incidents(status: str = "active") -> list[Incident]:
     refresh_incidents()
@@ -285,3 +313,36 @@ def resolve_incident(incident_id: str) -> Incident:
         raise HTTPException(status_code=404, detail="Incident not found") from error
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+class SinglePageApp(StaticFiles):
+    """Serve the built frontend, falling back to index.html for client-side routes."""
+
+    async def get_response(self, path: str, scope):
+        # Unknown API paths must stay honest 404s rather than returning the app shell.
+        # Starlette hands over an OS-normalised path, so compare with "/" separators.
+        normalized = path.replace("\\", "/")
+        if normalized == "api" or normalized.startswith("api/"):
+            raise StarletteHTTPException(status_code=404)
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as error:
+            if error.status_code != 404:
+                raise
+            return await super().get_response("index.html", scope)
+        if response.status_code == 404:
+            return await super().get_response("index.html", scope)
+        return response
+
+
+def mount_frontend(application: FastAPI, dist: Path) -> bool:
+    """Mount a built frontend at / after every API route; returns whether it was mounted."""
+    if not (dist / "index.html").is_file():
+        return False
+    application.mount("/", SinglePageApp(directory=dist, html=True), name="frontend")
+    return True
+
+
+# Registered last so every /api route above keeps priority over the static mount.
+FRONTEND_DIST = Path(os.environ.get("LINELENS_FRONTEND_DIST", Path(__file__).resolve().parents[2] / "frontend" / "dist"))
+mount_frontend(app, FRONTEND_DIST)

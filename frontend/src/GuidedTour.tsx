@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, LoaderCircle, X } from "lucide-react";
-import { TOUR_STEPS } from "./tour";
-import type { GuideChapter, TourStep } from "./tour";
+import type { GuideChapter, TourKind, TourStep } from "./tour";
 
 type TourMode = "welcome" | "active" | "complete" | null;
 type Rect = { left: number; top: number; width: number; height: number };
@@ -67,29 +66,39 @@ function useTargetRect(active: boolean, target?: string) {
   useEffect(() => {
     if (!active || !target) return;
     let observer: ResizeObserver | null = null;
+    let observed: HTMLElement | null = null;
     const locate = () => {
       const element = document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
+      if (element !== observed) {
+        // The target can appear, or be replaced, after the page or a demo scenario renders.
+        observer?.disconnect();
+        observer = null;
+        observed = element;
+        if (element) {
+          element.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+          observer = new ResizeObserver(locate);
+          observer.observe(element);
+        }
+      }
       if (!element) return setRect(null);
-      element.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
       const box = element.getBoundingClientRect();
-      setRect({ left: Math.max(8, box.left - 6), top: Math.max(8, box.top - 6), width: Math.max(24, box.width + 12), height: Math.max(24, box.height + 12) });
+      const next = { left: Math.max(8, box.left - 6), top: Math.max(8, box.top - 6), width: Math.max(24, box.width + 12), height: Math.max(24, box.height + 12) };
+      setRect((current) => current && current.left === next.left && current.top === next.top && current.width === next.width && current.height === next.height ? current : next);
     };
-    const frame = requestAnimationFrame(() => {
-      locate();
-      const element = document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
-      if (element) { observer = new ResizeObserver(locate); observer.observe(element); }
-    });
+    const frame = requestAnimationFrame(locate);
+    const retry = window.setInterval(locate, 400);
     window.addEventListener("resize", locate);
     window.addEventListener("scroll", locate, true);
-    return () => { cancelAnimationFrame(frame); observer?.disconnect(); window.removeEventListener("resize", locate); window.removeEventListener("scroll", locate, true); };
+    return () => { cancelAnimationFrame(frame); window.clearInterval(retry); observer?.disconnect(); window.removeEventListener("resize", locate); window.removeEventListener("scroll", locate, true); };
   }, [active, target]);
   return rect;
 }
 
-export function GuidedTour({ mode, step, busy, onStart, onBack, onNext, onExit, onExplore }: {
-  mode: TourMode; step: number; busy: boolean; onStart: () => void; onBack: () => void; onNext: () => void; onExit: () => void; onExplore: () => void;
+export function GuidedTour({ mode, kind, steps, step, busy, onStart, onBack, onNext, onExit, onExplore }: {
+  mode: TourMode; kind: TourKind; steps: readonly TourStep[]; step: number; busy: boolean; onStart: () => void; onBack: () => void; onNext: () => void; onExit: () => void; onExplore: () => void;
 }) {
-  const current = TOUR_STEPS[step];
+  const current = steps[step];
+  const label = kind === "pitch" ? "Pitch demo" : "Full product tour";
   const rect = useTargetRect(mode === "active", current?.target);
   const { cardRef, style } = useTourCardPosition(mode === "active", rect, current?.id ?? "");
   useEffect(() => {
@@ -99,8 +108,8 @@ export function GuidedTour({ mode, step, busy, onStart, onBack, onNext, onExit, 
   }, [mode, onExit]);
   if (!mode) return null;
   if (mode === "welcome") return <div className="tour-welcome-backdrop" onMouseDown={onExit}><section className="tour-welcome" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><button className="guide-close" aria-label="Close welcome" onClick={onExit}><X size={16}/></button><span>Welcome to LineLens</span><h1>See problems earlier.<br/>Trace quality issues faster.</h1><p>LineLens keeps an evolving view of the production line and the vehicles moving through it.</p><div><button onClick={onStart}>Start full tour</button><button className="secondary" onClick={onExplore}>Explore on my own</button></div></section></div>;
-  if (mode === "complete") return <div className="tour-welcome-backdrop" onMouseDown={onExit}><section className="tour-welcome tour-finish" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><button className="guide-close" aria-label="Close tour" onClick={onExit}><X size={16}/></button><CheckCircle2 size={32}/><span>Tour complete</span><h1>You now know the LineLens story.</h1><p>See now. Predict next. Trace affected vehicles. Respond with evidence. People stay in control.</p><div><button onClick={onExplore}>Explore LineLens</button><button className="secondary" onClick={onExit}>Reset to healthy factory</button></div></section></div>;
-  return <div className="tour-layer" aria-live="polite">{rect && <div className="tour-spotlight" style={rect} />}<section ref={cardRef} style={style} className="tour-card"><header><span>Full product tour · {String(step + 1).padStart(2, "0")} / {String(TOUR_STEPS.length).padStart(2, "0")}</span><button aria-label="Exit tour" onClick={onExit}><X size={15}/></button></header><div className="tour-progress"><i style={{ width: `${((step + 1) / TOUR_STEPS.length) * 100}%` }} /></div><h2>{current.title}</h2><p>{busy ? "Preparing real simulated factory output…" : current.text}</p>{!busy && current.hint && <small>{current.hint}</small>}<footer><button className="tour-back" disabled={step === 0 || busy} onClick={onBack}><ChevronLeft size={14}/> Back</button><button disabled={busy} onClick={onNext}>{busy ? <LoaderCircle className="spin" size={14}/> : step === TOUR_STEPS.length - 1 ? "Finish tour" : <>Next <ChevronRight size={14}/></>}</button></footer></section></div>;
+  if (mode === "complete") return <div className="tour-welcome-backdrop" onMouseDown={onExit}><section className="tour-welcome tour-finish" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><button className="guide-close" aria-label="Close tour" onClick={onExit}><X size={16}/></button><CheckCircle2 size={32}/><span>{kind === "pitch" ? "Pitch demo complete" : "Tour complete"}</span><h1>{kind === "pitch" ? "See it early. Know the cost. Act with evidence." : "You now know the LineLens story."}</h1><p>{kind === "pitch" ? "Synthetic data and illustrative assumptions throughout. People stay in control of every decision." : "See now. Predict next. Trace affected vehicles. Respond with evidence. People stay in control."}</p><div><button onClick={onExplore}>Explore LineLens</button><button className="secondary" onClick={onExit}>Reset to healthy factory</button></div></section></div>;
+  return <div className="tour-layer" aria-live="polite">{rect && <div className="tour-spotlight" style={rect} />}<section ref={cardRef} style={style} className={`tour-card ${kind === "pitch" ? "pitch-card" : ""}`}><header><span>{label} · {String(step + 1).padStart(2, "0")} / {String(steps.length).padStart(2, "0")}</span><button aria-label="Exit tour" onClick={onExit}><X size={15}/></button></header><div className="tour-progress"><i style={{ width: `${((step + 1) / steps.length) * 100}%` }} /></div><h2>{current.title}</h2><p>{busy ? "Preparing real simulated factory output…" : current.text}</p>{!busy && current.hint && <small>{current.hint}</small>}<footer><button className="tour-back" disabled={step === 0 || busy} onClick={onBack}><ChevronLeft size={14}/> Back</button><button disabled={busy} onClick={onNext}>{busy ? <LoaderCircle className="spin" size={14}/> : step === steps.length - 1 ? (kind === "pitch" ? "Finish demo" : "Finish tour") : <>Next <ChevronRight size={14}/></>}</button></footer></section></div>;
 }
 
 export function HelpPopover({ open, chapters, completedChapterIds, onStart, onChapter, onActivity, onValidation, onClose }: { open: boolean; chapters: readonly GuideChapter[]; completedChapterIds: string[]; onStart: () => void; onChapter: (chapter: GuideChapter) => void; onActivity: () => void; onValidation: () => void; onClose: () => void }) {
@@ -113,7 +122,8 @@ export function HelpPopover({ open, chapters, completedChapterIds, onStart, onCh
       <section className="help-tour-card" aria-label="Full product tour"><div><span>New to LineLens?</span><b>Follow the complete product story</b><small>About 5 minutes · starts from the Dashboard</small></div><button onClick={onStart}>Start tour</button></section>
       <section className="help-guides" aria-labelledby="workspace-guides"><div className="help-section-heading"><span id="workspace-guides">Workspace guides</span><small>Choose the area you are using now.</small></div><div className="help-guide-grid">{chapters.map((chapter) => <button key={chapter.id} className="help-guide-choice" onClick={() => onChapter(chapter)}><span>{chapter.label}</span><small>{chapter.summary}</small><em>{completedChapterIds.includes(chapter.id) ? "Review guide" : chapter.duration}</em></button>)}</div></section>
       <section className="help-reference" aria-label="Supporting information"><button className="text-action" onClick={onActivity}><span>Activity</span><small>Read the current session’s meaningful events.</small></button><button className="text-action" onClick={onValidation}><span>Prediction validation</span><small>See how simulated outcomes are recorded.</small></button></section>
-      <p className="help-disclosure">This prototype uses synthetic factory data. It does not connect to or control factory equipment.</p>
+      <section className="help-about" aria-label="About this prototype"><span>About this prototype</span><p>LineLens was built for the Maruti Suzuki Innovation Hackathon 2026 (IIMCIP), focus domain Manufacturing &amp; Industrial Innovation. Independent student concept for the Maruti Suzuki Innovation Hackathon 2026. Not affiliated with or endorsed by Maruti Suzuki India Ltd. No Maruti Suzuki data is used.</p></section>
+      <p className="help-disclosure">This prototype uses synthetic factory data and illustrative cost assumptions. It does not connect to or control factory equipment.</p>
     </aside>
   </div>;
 }

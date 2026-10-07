@@ -11,6 +11,7 @@ flowchart TD
         GroundTruth[(Latent Ground Truth)]
         Sim -- State, timestamps, vehicle ID --> Obs[Observation Layer]
         Sim -. Quality truth .-> GroundTruth
+        Sim -- Station state × simulated seconds --> Energy[Synthetic Energy Meter]
     end
 
     subgraph Digital Twin [Core Twin State]
@@ -29,6 +30,10 @@ flowchart TD
     subgraph Human Interface [Decision & Workflow]
         Forward -- +2m, +5m, +10m horizons --> Incident[Incident Engine]
         Genealogy -- Suspected common factors --> Incident
+        Forward -- Throughput, starved & blocked time --> Impact[Impact & Sustainability Estimates]
+        Genealogy -- Flagged cohort, validated detections --> Impact
+        Energy -- kWh by station and state --> Impact
+        Impact -- Vehicles, ₹, kWh, CO2 at risk --> Incident
         Incident -- Playbooks, human actions --> User([Plant Team])
         
         GroundTruth -- Actual trajectories & EOL outcomes --> Validation[Validation Feedback]
@@ -66,12 +71,22 @@ Each vehicle maintains an in-memory digital build record summarizing its cycle t
 
 Risky vehicles are monitored dynamically. A **Quality Genealogy** analyzer continuously scans high-risk vehicle cohorts for enriched common factors—identifying suspected root causes (e.g., a specific weld gun or process parameter) by comparing feature prevalence in the affected cohort against normal baseline rates.
 
+## Impact & Sustainability Layer
+LineLens translates evidence it already has into assumption-based business terms; it never re-runs the forward simulation for this.
+- **Synthetic energy meter** (`backend/app/sustainability/`): every simulator tick adds `power(state) × simulated seconds` per station, using a synthetic running/idle power profile. Starved, blocked, and idle time draws idle power. The meter resets with the simulation and is read under the simulator lock. Derived values are kWh per completed vehicle (null until one completes), idle-energy share, CO₂ (kWh × a configurable grid factor), and the top idle-energy stations.
+- **Idle energy at risk**: for stations the 10-minute forecast flags as starved or blocked, forecast idle time beyond normal takt idle × the station's idle power. The Forward Twin reports per-station starved and blocked seconds for this purpose.
+- **Impact service** (`backend/app/impact/`): vehicles at risk per shift = (rolling throughput at forecast time − 10-minute forecast throughput) × shift hours, counted only while bottleneck risk is at or above the production-incident threshold; contribution at risk = vehicles × margin. Quality rework avoided = flagged bodies still on the line × (End-of-Line − in-line rework cost); the validated figure uses true positives confirmed at End-of-Line.
+- **Assumptions** (`ImpactAssumptions`): shift hours, contribution margin, in-line and End-of-Line rework cost, electricity tariff, and grid emission factor. All are illustrative, validated as non-negative, held in memory, and editable through `GET`/`PUT /api/impact/assumptions`. `GET /api/impact` returns every section, the assumptions used, and a method note.
+
+## Supplier Traceability
+Weld-cell build records carry the electrode-cap lot and its synthetic Tier-2 supplier (`consumable_supplier`). Genealogy treats the supplier as a weld-process factor, so a drifting weld cell surfaces the weld gun, cap lot, and supplier together. The quality playbook includes raising a supplier quality alert and holding remaining stock pending inspection.
+
 ## Incident Engine
 To support human operators, LineLens escalates persistent risks into a human-in-the-loop Incident Engine.
 - **Production Incidents**: Triggered by bottleneck forecasts, providing anticipated disruption timing and affected downstream buffers.
 - **Quality Incidents**: Triggered when a vehicle cohort shares a high-risk quality pattern, enabling early containment actions.
 
-The Incident Engine provides guided playbooks and records human workflow steps (acknowledge, investigate, resolve). It never executes autonomous physical control actions.
+The Incident Engine provides guided playbooks and records human workflow steps (acknowledge, investigate, resolve). Open incidents show the assumption-based **Impact if nothing changes**. It never executes autonomous physical control actions.
 
 ## Validation Layer
 LineLens includes real-time validation against synthetic ground truth.
@@ -85,4 +100,7 @@ The UI is a React 18 application using Vite and React Three Fiber (Three.js) for
 - **Incidents**: Workflow response for identified production and quality issues.
 
 ## Configuration
-Station specifications, nominal takt times, incoming queue capacities, and assigned sensor maturity tiers are defined in `backend/app/simulation.py`. The backend port is selected when starting Uvicorn; `frontend/vite.config.ts` proxies `/api` to port 8102 during development. The local prototype requires no environment file or external service credentials.
+Station specifications, nominal takt times, incoming queue capacities, and assigned sensor maturity tiers are defined in `backend/app/simulation.py`. The backend port is selected when starting Uvicorn; `frontend/vite.config.ts` proxies `/api` to port 8102 during development. The synthetic power profile is a single dictionary in `backend/app/sustainability/energy.py`. The local prototype requires no environment file or external service credentials.
+
+## Deployment
+When `frontend/dist/index.html` exists, `backend/app/main.py` mounts the built frontend at `/` after every `/api` route, with a single-page-app fallback to `index.html`; unknown `/api/*` paths still return 404. `LINELENS_FRONTEND_DIST` can point at another build directory. The multi-stage `Dockerfile` builds the frontend with Node 22, then runs `uvicorn app.main:app --port ${PORT:-8000}` from `backend/` on Python 3.12 with a single worker, because all state is in process memory. Model artifact paths resolve relative to their module, so the app runs from any working directory.

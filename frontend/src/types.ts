@@ -246,6 +246,8 @@ export interface OutcomeMetrics {
   blocked_time_seconds: number;
   starved_time_seconds: number;
   accumulator_peak: Record<string, number>;
+  station_blocked_seconds?: Record<string, number>;
+  station_starved_seconds?: Record<string, number>;
 }
 export interface ForwardResult {
   snapshot_time: number;
@@ -482,4 +484,83 @@ export interface Incident {
   investigating_at: number | null;
   resolved_at: number | null;
   recurrence_of: string | null;
+}
+
+// Assumption-based impact layer. Every value is derived from synthetic data and
+// the illustrative assumptions below; none are plant or OEM figures.
+export interface ImpactAssumptions {
+  shift_hours: number;
+  contribution_margin_per_vehicle_inr: number;
+  inline_rework_cost_inr: number;
+  eol_rework_cost_inr: number;
+  electricity_tariff_inr_per_kwh: number;
+  grid_emission_factor_kg_per_kwh: number;
+}
+export interface ProductionImpact {
+  bottleneck_active: boolean;
+  source_station_id: string;
+  source_risk: number;
+  horizon_seconds: number;
+  baseline_throughput_per_hour: number | null;
+  forecast_throughput_per_hour: number | null;
+  vehicles_at_risk_per_shift: number;
+  contribution_at_risk_inr: number;
+  method: string;
+}
+export interface QualityImpact {
+  incident_active: boolean;
+  incident_id: string | null;
+  exposed_vehicles: number;
+  catchable_in_line: number;
+  rework_cost_delta_inr: number;
+  potential_rework_avoided_inr: number;
+  validated_early_detections: number | null;
+  validated_rework_avoided_inr: number | null;
+  method: string;
+}
+export interface StationEnergy {
+  station_id: string;
+  station_name: string;
+  total_kwh: number;
+  idle_kwh: number;
+  idle_energy_share: number;
+  kwh_by_state: Record<string, number>;
+  running_kw: number;
+  idle_kw: number;
+  source_note: string;
+}
+export interface StationIdleRisk {
+  station_id: string;
+  excess_idle_seconds: number;
+  idle_kw: number;
+  kwh: number;
+}
+export interface EnergyImpact {
+  label: string;
+  simulated_seconds: number;
+  vehicles_completed: number;
+  total_kwh: number;
+  kwh_per_vehicle: number | null;
+  idle_kwh: number;
+  idle_energy_share: number;
+  energy_cost_inr: number;
+  idle_energy_cost_inr: number;
+  co2_kg: number;
+  grid_emission_factor_kg_per_kwh: number;
+  emission_factor_note: string;
+  top_idle_stations: StationEnergy[];
+  idle_energy_at_risk_kwh: number;
+  idle_energy_at_risk_horizon_seconds: number;
+  idle_energy_at_risk_kwh_per_shift: number;
+  idle_energy_at_risk_inr_per_shift: number;
+  idle_energy_at_risk_stations: StationIdleRisk[];
+  method: string;
+}
+export interface ImpactReport {
+  generated_at: number;
+  label: string;
+  assumptions: ImpactAssumptions;
+  production: ProductionImpact;
+  quality: QualityImpact;
+  energy: EnergyImpact;
 }

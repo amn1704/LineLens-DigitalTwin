@@ -25,11 +25,16 @@ import {
   Settings2,
   Shield,
   HelpCircle,
+  IndianRupee,
+  Leaf,
+  Presentation,
+  SlidersHorizontal,
   Timer,
   Users,
   X,
+  Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   advanceDemo,
   getQualityGenealogy,
@@ -41,6 +46,7 @@ import {
   addIncidentNote,
   getIncidentHistory,
   getIncidents,
+  getImpact,
   getState,
   getPredictions,
   getVehicleThread,
@@ -50,14 +56,16 @@ import {
   setWeldDrift,
   simulationControl,
   incidentAction,
+  updateImpactAssumptions,
 } from "./api";
-import { FactoryScene } from "./twin/FactoryScene";
 import { GuidedTour, HelpPopover, PageGuide } from "./GuidedTour";
-import { GUIDE_CHAPTERS, TOUR_STEPS, completedGuides, hasSeenTour, rememberGuide, rememberTour } from "./tour";
-import type { GuideChapter } from "./tour";
+import { GUIDE_CHAPTERS, completedGuides, hasSeenTour, rememberGuide, rememberTour, tourSteps } from "./tour";
+import type { GuideChapter, TourKind } from "./tour";
 import type {
   GenealogyAnalysis,
   HistoryPoint,
+  ImpactAssumptions,
+  ImpactReport,
   Incident,
   BottleneckAssessment,
   ForecastAlert,
@@ -78,6 +86,8 @@ import type {
 type Tab = "Dashboard" | "Machines" | "Quality" | "Incidents" | "Activity" | "Analytics";
 type ViewAction = "reset" | "zoom-in" | "zoom-out";
 const sections = ["Body Shop", "Paint Shop", "Final Assembly"] as const;
+// Three.js loads in its own chunk so the workspaces render before the 3D factory.
+const FactoryScene = lazy(() => import("./twin/FactoryScene").then((module) => ({ default: module.FactoryScene })));
 const stateTone = (state: Station["operational_state"]) =>
   state === "RUNNING"
     ? "healthy"
@@ -88,6 +98,10 @@ const stateTone = (state: Station["operational_state"]) =>
         : "idle";
 const clock = (seconds: number) =>
   `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+// Indian lakh grouping for every ₹ value, e.g. ₹68,00,000.
+const inrFormatter = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
+const formatInr = (value: number | null | undefined) => value == null ? "—" : inrFormatter.format(value);
+const formatKwh = (value: number | null | undefined, digits = 1) => value == null ? "—" : `${value.toFixed(digits)} kWh`;
 
 export default function App() {
   const [state, setState] = useState<TwinState | null>(null);
@@ -122,9 +136,13 @@ export default function App() {
   const [simulationOpen, setSimulationOpen] = useState(false);
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [validationOpen, setValidationOpen] = useState(false);
+  const [assumptionsOpen, setAssumptionsOpen] = useState(false);
+  const [impact, setImpact] = useState<ImpactReport | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
   const [tourMode, setTourMode] = useState<"welcome" | "active" | "complete" | null>(null);
   const [tourStep, setTourStep] = useState(0);
+  const [tourKind, setTourKind] = useState<TourKind>("full");
+  const activeTourSteps = tourSteps(tourKind);
   const [helpOpen, setHelpOpen] = useState(false);
   const [guideChapter, setGuideChapter] = useState<GuideChapter | null>(null);
   const [guideStep, setGuideStep] = useState(0);
@@ -152,12 +170,13 @@ export default function App() {
       if (simulationOpen) setSimulationOpen(false);
       if (viewOptionsOpen) setViewOptionsOpen(false);
       if (validationOpen) setValidationOpen(false);
+      if (assumptionsOpen) setAssumptionsOpen(false);
       if (moreOpen) setMoreOpen(false);
       if (helpOpen) setHelpOpen(false);
     };
     window.addEventListener("keydown", closeOverlay);
     return () => window.removeEventListener("keydown", closeOverlay);
-  }, [cameraMode, demoOpen, helpOpen, moreOpen, simulationOpen, validationOpen, viewOptionsOpen]);
+  }, [assumptionsOpen, cameraMode, demoOpen, helpOpen, moreOpen, simulationOpen, validationOpen, viewOptionsOpen]);
 
   useEffect(() => {
     if (!state || tourWelcomeChecked.current) return;
@@ -229,6 +248,20 @@ export default function App() {
     };
     void refreshIncidents();
     const timer = window.setInterval(() => void refreshIncidents(), 1800);
+    return () => { mounted = false; window.clearInterval(timer); };
+  }, []);
+  useEffect(() => {
+    let mounted = true;
+    const refreshImpact = async () => {
+      try {
+        const next = await getImpact();
+        if (mounted) setImpact(next);
+      } catch {
+        if (mounted) setImpact(null);
+      }
+    };
+    void refreshImpact();
+    const timer = window.setInterval(() => void refreshImpact(), 2000);
     return () => { mounted = false; window.clearInterval(timer); };
   }, []);
   useEffect(() => {
@@ -364,7 +397,7 @@ export default function App() {
 
   useEffect(() => {
     if (tourMode !== "active") return;
-    const step = TOUR_STEPS[tourStep];
+    const step = activeTourSteps[tourStep];
     setActiveTab(step.page);
     if (step.stationId) {
       setSelectedId(step.stationId);
@@ -373,26 +406,26 @@ export default function App() {
     if (step.dataView) setDataView(step.dataView);
     if (step.dataView === "forecast") setForecastHorizon(300);
     if (step.qualityFilter) changeQualityFilter(step.qualityFilter);
-    if (step.validation) setValidationOpen(true);
+    setValidationOpen(Boolean(step.validation));
     if (step.scenario && !tourScenarioRun.current.has(step.scenario)) {
       tourScenarioRun.current.add(step.scenario);
       void executeDemo(step.scenario);
     }
-  }, [executeDemo, tourMode, tourStep, qualityVehicles]);
+  }, [activeTourSteps, executeDemo, tourMode, tourStep, qualityVehicles]);
 
   useEffect(() => {
-    if (tourMode !== "active" || TOUR_STEPS[tourStep]?.page !== "Quality" || qualityVehicles.length === 0) return;
-    const candidate = TOUR_STEPS[tourStep]?.qualityFilter === "INSPECT"
+    if (tourMode !== "active" || activeTourSteps[tourStep]?.page !== "Quality" || qualityVehicles.length === 0) return;
+    const candidate = activeTourSteps[tourStep]?.qualityFilter === "INSPECT"
       ? qualityVehicles.find((vehicle) => vehicle.risk >= .6)
       : qualityVehicles.find((vehicle) => vehicle.line_progress >= .5);
     setSelectedQualityVehicle(candidate ?? qualityVehicles[0]);
-  }, [qualityVehicles, tourMode, tourStep]);
+  }, [activeTourSteps, qualityVehicles, tourMode, tourStep]);
 
   useEffect(() => {
-    if (tourMode === "active" && TOUR_STEPS[tourStep]?.page === "Incidents" && incidents.length) {
+    if (tourMode === "active" && activeTourSteps[tourStep]?.page === "Incidents" && incidents.length) {
       setSelectedIncident(incidents.find((incident) => incident.type === "PRODUCTION") ?? incidents[0]);
     }
-  }, [incidents, tourMode, tourStep]);
+  }, [activeTourSteps, incidents, tourMode, tourStep]);
   useEffect(() => {
     if (!guideChapter) return;
     setActiveTab(guideChapter.page as Tab);
@@ -493,6 +526,12 @@ export default function App() {
       setError("Unable to update weld process drift scenario.");
     }
   };
+  const openAssumptions = () => {
+    setDemoOpen(false);
+    setValidationOpen(false);
+    setMoreOpen(false);
+    setAssumptionsOpen(true);
+  };
   const openIncident = (incident: Incident | null) => {
     if (!incident) return;
     setSelectedIncident(incident);
@@ -516,8 +555,15 @@ export default function App() {
       setIncidents((current) => current.map((item) => item.incident_id === updated.incident_id ? updated : item));
     } catch { setError("Unable to add the incident note."); }
   };
-  const beginTour = async () => {
+  const beginTour = async (kind: TourKind = "full") => {
     tourScenarioRun.current.clear();
+    setTourKind(kind);
+    setHelpOpen(false);
+    setDemoOpen(false);
+    setSimulationOpen(false);
+    setValidationOpen(false);
+    setAssumptionsOpen(false);
+    setSelectedVehicle(null);
     setTourStep(0);
     setTourMode("active");
     setActiveTab("Dashboard");
@@ -543,11 +589,11 @@ export default function App() {
     try { setState(await simulationControl("reset")); } catch { setError("Unable to return to the healthy demonstration."); }
   };
   const nextTour = () => {
-    if (tourStep >= TOUR_STEPS.length - 1) {
+    if (tourStep >= activeTourSteps.length - 1) {
       rememberTour(window.localStorage);
       setTourMode("complete");
     } else {
-      const next = TOUR_STEPS[tourStep + 1];
+      const next = activeTourSteps[tourStep + 1];
       if (next.scenario && !tourScenarioRun.current.has(next.scenario)) setDemoBusy(true);
       setTourStep((current) => current + 1);
     }
@@ -616,6 +662,7 @@ export default function App() {
           <span className={state.simulation.is_running ? "live-badge" : "paused-badge"}><i />{state.simulation.is_running ? "Running" : "Paused"}</span>
           <button className={`header-action ${simulationOpen ? "active" : ""}`} onClick={() => { setDemoOpen(false); setViewOptionsOpen(false); setSimulationOpen((open) => !open); }}><Timer size={14}/> Simulation</button>
           <button className={`header-action ${demoOpen ? "active" : ""}`} onClick={() => { setSimulationOpen(false); setViewOptionsOpen(false); setDemoOpen(true); }}><FlaskConical size={14}/> Demo</button>
+          <button className="header-action pitch-action" aria-label="Pitch demo" title="Reset the synthetic demo and run the three-minute presenter story" onClick={() => void beginTour("pitch")}><Presentation size={14}/> Pitch demo</button>
           <button className="header-action" onClick={() => setHelpOpen((open) => !open)}><HelpCircle size={14}/> Help</button>
         </div>
       </header>
@@ -649,6 +696,7 @@ export default function App() {
           {moreOpen && <div className="more-menu">
             <button onClick={() => { setActiveTab("Machines"); setMoreOpen(false); }}><List size={14}/> Stations</button>
             <button onClick={() => { setActiveTab("Analytics"); setMoreOpen(false); }}><ChartLine size={14}/> Trends</button>
+            <button onClick={openAssumptions}><SlidersHorizontal size={14}/> Impact assumptions</button>
           </div>}
         </div>
       </nav>
@@ -799,6 +847,7 @@ export default function App() {
                 <span><b>{incident.type === "QUALITY" ? "Quality watch" : "Early warning"}</b>{incident.summary} · View incident</span>
               </button>
             ))}
+            <Suspense fallback={<div className="scene-loading" role="status">Loading the 3D factory…</div>}>
             <FactoryScene
               stations={state.stations}
               vehicles={state.vehicles}
@@ -823,6 +872,7 @@ export default function App() {
               )}
               qualityScenarioActive={state.simulation.quality_scenario_active}
             />
+            </Suspense>
             {cameraMode !== "walk" && (state.simulation.active_scenario || state.simulation.quality_scenario_active) && <span className="demo-active-small"><i />Demo · {state.simulation.quality_scenario_active ? "Weld quality" : "Bottleneck"}</span>}
             {cameraMode === "walk" && <div className="walk-hud" role="status"><div><span>Walk mode</span><b>Explore the factory floor</b><small>Click the factory to look around · WASD / arrows move · Shift faster · Esc exits</small></div><button onClick={() => setCameraMode("orbit")}>Exit walk</button></div>}
             {cameraMode !== "walk" && <div className="asset-overlay">
@@ -857,6 +907,8 @@ export default function App() {
             incident={incidents.find((item) => item.affected_assets.some((asset) => asset.asset_id === selected.id)) ?? null}
             vehicleIncident={selectedVehicle ? incidents.find((item) => item.affected_vehicles.some((vehicle) => vehicle.vehicle_id === selectedVehicle.vehicle_id)) ?? null : null}
             onOpenIncident={openIncident}
+            impact={impact}
+            onEditAssumptions={openAssumptions}
           />}
         </section>
       )}
@@ -889,6 +941,8 @@ export default function App() {
           onAction={updateIncident}
           onNote={noteIncident}
           onGuide={() => startGuideChapter(GUIDE_CHAPTERS[2])}
+          impact={impact}
+          onEditAssumptions={openAssumptions}
         />
       )}
       {activeTab === "Activity" && (
@@ -913,13 +967,16 @@ export default function App() {
           incident={selectedQualityVehicle ? incidents.find((item) => item.affected_vehicles.some((vehicle) => vehicle.vehicle_id === selectedQualityVehicle.vehicle_id)) ?? null : null}
           onOpenIncident={openIncident}
           onGuide={() => startGuideChapter(GUIDE_CHAPTERS[1])}
+          impact={impact}
+          onEditAssumptions={openAssumptions}
         />
       )}
       {simulationOpen && <SimulationPopover running={state.simulation.is_running} elapsed={state.simulation.shift_elapsed} speed={state.simulation.speed} onClose={() => setSimulationOpen(false)} onControl={control} onSpeed={speed}/>}
       {demoOpen && <DemoDrawer busy={demoBusy} activeScenario={state.simulation.active_scenario !== null} qualityActive={state.simulation.quality_scenario_active} speed={state.simulation.speed} onClose={() => setDemoOpen(false)} onRun={(kind) => void executeDemo(kind)} onSensorLoss={() => { setDemoOpen(false); setActiveTab("Dashboard"); setSelectedId("FA-01"); void testCondition("FA-01", { drop: true }); }} onReset={() => { setDemoOpen(false); void control("reset"); }} onSpeed={speed} />}
       {validationOpen && <ValidationDrawer state={state} quality={qualityMetrics} prediction={prediction} onClose={() => setValidationOpen(false)} />}
+      {assumptionsOpen && <ImpactAssumptionsDrawer assumptions={impact?.assumptions ?? null} onClose={() => setAssumptionsOpen(false)} onSaved={(saved) => { setImpact((current) => current ? { ...current, assumptions: saved } : current); void getImpact().then(setImpact).catch(() => undefined); }} />}
       <HelpPopover open={helpOpen} chapters={GUIDE_CHAPTERS} completedChapterIds={guideCompleted} onClose={() => setHelpOpen(false)} onStart={() => { setHelpOpen(false); void beginTour(); }} onChapter={startGuideChapter} onActivity={() => { setHelpOpen(false); setActiveTab("Activity"); }} onValidation={() => { setHelpOpen(false); setValidationOpen(true); }}/>
-      <GuidedTour mode={tourMode} step={tourStep} busy={demoBusy} onStart={() => void beginTour()} onBack={() => setTourStep((current) => Math.max(0, current - 1))} onNext={nextTour} onExit={() => void skipTour()} onExplore={() => void exploreAfterTour()} />
+      <GuidedTour mode={tourMode} kind={tourKind} steps={activeTourSteps} step={tourStep} busy={demoBusy} onStart={() => void beginTour()} onBack={() => setTourStep((current) => Math.max(0, current - 1))} onNext={nextTour} onExit={() => void skipTour()} onExplore={() => void exploreAfterTour()} />
       {guideChapter && <PageGuide chapter={guideChapter} step={guideStep} onBack={() => setGuideStep((current) => Math.max(0, current - 1))} onNext={finishGuideStep} onExit={() => { setGuideChapter(null); setFullGuide(false); }} />}
     </main>
   );
@@ -949,7 +1006,98 @@ function ValidationDrawer({ state, quality, prediction, onClose }: { state: Twin
   const basic = state.stations.filter((station) => station.sensor_mode === "LEGACY / BASIC SIGNALS").length;
   const checked = quality ? quality.true_positives + quality.false_positives : 0;
   const correct = quality?.precision === null || quality?.precision === undefined ? "Awaiting outcomes" : `${Math.round(quality.precision * 100)}%`;
-  return <div className="drawer-backdrop" onClick={onClose}><aside className="app-drawer validation-drawer" onClick={(event) => event.stopPropagation()}><header><div><span>About LineLens</span><h2>Validation</h2></div><button aria-label="Close validation" onClick={onClose}><X size={17}/></button></header><p>Predictions are checked against what happens later in the synthetic factory.</p><div className="validation-simple"><Operation label="Warnings checked" value={checked.toString()}/><Operation label="Correct warnings" value={correct}/><Operation label="Average time gained" value={quality?.prediction_lead_time_mean == null ? "Awaiting outcomes" : `${(quality.prediction_lead_time_mean / 60).toFixed(1)} min`}/><Operation label="Vehicles flagged before EOL" value={quality?.true_positives?.toString() ?? "0"}/></div><section className="coverage-simple"><span>Factory data coverage</span><div><b>{full}</b><small>Direct data</small></div><div><b>{partial}</b><small>Partial data</small></div><div><b>{basic}</b><small>Basic data</small></div><p>LineLens can estimate all {state.stations.length} station states.</p></section><details className="app-details"><summary>Technical validation details <ChevronDown size={14}/></summary><div className="validation-technical"><small>Quality model: {quality?.model_version ?? "Loading"}</small><small>Predictions: {quality?.total_predictions ?? 0}</small><small>Precision: {quality?.precision == null ? "—" : `${(quality.precision * 100).toFixed(1)}%`}</small><small>Recall: {quality?.recall == null ? "—" : `${(quality.recall * 100).toFixed(1)}%`}</small><small>Forecast checks: {prediction?.validation.metrics.filter((metric) => metric.evaluated).length ?? 0} horizons evaluated</small></div></details></aside></div>;
+  return <div className="drawer-backdrop" onClick={onClose}><aside className="app-drawer validation-drawer" onClick={(event) => event.stopPropagation()}><header><div><span>About LineLens</span><h2>Validation</h2></div><button aria-label="Close validation" onClick={onClose}><X size={17}/></button></header><p>Predictions are checked against what happens later in the synthetic factory.</p><div data-tour="validation-summary" className="validation-simple"><Operation label="Warnings checked" value={checked.toString()}/><Operation label="Correct warnings" value={correct}/><Operation label="Average time gained" value={quality?.prediction_lead_time_mean == null ? "Awaiting outcomes" : `${(quality.prediction_lead_time_mean / 60).toFixed(1)} min`}/><Operation label="Vehicles flagged before EOL" value={quality?.true_positives?.toString() ?? "0"}/></div><section className="coverage-simple"><span>Factory data coverage</span><div><b>{full}</b><small>Direct data</small></div><div><b>{partial}</b><small>Partial data</small></div><div><b>{basic}</b><small>Basic data</small></div><p>LineLens can estimate all {state.stations.length} station states.</p></section><details className="app-details"><summary>Technical validation details <ChevronDown size={14}/></summary><div className="validation-technical"><small>Quality model: {quality?.model_version ?? "Loading"}</small><small>Predictions: {quality?.total_predictions ?? 0}</small><small>Precision: {quality?.precision == null ? "—" : `${(quality.precision * 100).toFixed(1)}%`}</small><small>Recall: {quality?.recall == null ? "—" : `${(quality.recall * 100).toFixed(1)}%`}</small><small>Forecast checks: {prediction?.validation.metrics.filter((metric) => metric.evaluated).length ?? 0} horizons evaluated</small></div></details></aside></div>;
+}
+
+const ASSUMPTION_FIELDS: readonly { key: keyof ImpactAssumptions; label: string; unit: string; help: string; step: number; max?: number }[] = [
+  { key: "shift_hours", label: "Shift length", unit: "hours", help: "Extrapolates the 10-minute forecast to one shift.", step: 0.5, max: 24 },
+  { key: "contribution_margin_per_vehicle_inr", label: "Contribution margin", unit: "₹ per vehicle", help: "Placeholder value lost for each vehicle not built.", step: 1000 },
+  { key: "inline_rework_cost_inr", label: "In-line rework", unit: "₹ per body", help: "Fixing a body in the Body Shop.", step: 100 },
+  { key: "eol_rework_cost_inr", label: "End-of-Line rework", unit: "₹ per body", help: "Fixing the same issue after End-of-Line inspection.", step: 100 },
+  { key: "electricity_tariff_inr_per_kwh", label: "Electricity tariff", unit: "₹ per kWh", help: "Placeholder industrial tariff.", step: 0.5 },
+  { key: "grid_emission_factor_kg_per_kwh", label: "Grid emission factor", unit: "kg CO₂ per kWh", help: "Approx. Indian grid average. Verify against the latest CEA CO₂ Baseline Database.", step: 0.01 },
+];
+
+function ImpactAssumptionsDrawer({ assumptions, onClose, onSaved }: { assumptions: ImpactAssumptions | null; onClose: () => void; onSaved: (assumptions: ImpactAssumptions) => void }) {
+  const toDraft = (values: ImpactAssumptions | null) => Object.fromEntries(ASSUMPTION_FIELDS.map((field) => [field.key, values ? String(values[field.key]) : ""])) as Record<keyof ImpactAssumptions, string>;
+  const [draft, setDraft] = useState(() => toDraft(assumptions));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (assumptions) setDraft((current) => Object.values(current).every((value) => value === "") ? toDraft(assumptions) : current);
+  }, [assumptions]);
+  const invalid = ASSUMPTION_FIELDS.filter((field) => {
+    const value = Number(draft[field.key]);
+    return draft[field.key].trim() === "" || !Number.isFinite(value) || value < 0 || (field.max !== undefined && value > field.max);
+  });
+  const save = async (values: Partial<ImpactAssumptions>, restored: boolean) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const saved = await updateImpactAssumptions(values);
+      setDraft(toDraft(saved));
+      onSaved(saved);
+      setMessage(restored ? "Illustrative defaults restored." : "Saved. Impact estimates now use these values.");
+    } catch {
+      setMessage("These values could not be saved. Every value must be zero or more, and a shift at most 24 hours.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <div className="drawer-backdrop" onClick={onClose}><aside className="app-drawer assumptions-drawer" onClick={(event) => event.stopPropagation()}><header><div><span>Illustrative · assumption-based</span><h2>Impact assumptions</h2></div><button aria-label="Close impact assumptions" onClick={onClose}><X size={17}/></button></header><p>LineLens turns synthetic line evidence into vehicles, ₹ and kWh with these placeholders. They are not Maruti Suzuki or plant figures; replace them with your own to test sensitivity. Values reset when the backend restarts.</p><form className="assumption-fields" onSubmit={(event) => { event.preventDefault(); if (!invalid.length) void save(Object.fromEntries(ASSUMPTION_FIELDS.map((field) => [field.key, Number(draft[field.key])])), false); }}>{ASSUMPTION_FIELDS.map((field) => <label key={field.key} className={invalid.includes(field) ? "invalid" : ""}><span>{field.label}<small>{field.unit}</small></span><input aria-label={`${field.label} (${field.unit})`} type="number" inputMode="decimal" min={0} max={field.max} step={field.step} value={draft[field.key]} onChange={(event) => setDraft((current) => ({ ...current, [field.key]: event.target.value }))}/><small>{field.help}</small></label>)}<div className="assumption-actions"><button type="submit" disabled={busy || invalid.length > 0}>Save assumptions</button><button type="button" className="quiet" disabled={busy} onClick={() => void save({}, true)}>Restore illustrative defaults</button></div></form>{invalid.length > 0 && <div className="assumption-message warning">Every value must be zero or more{invalid.some((field) => field.max !== undefined) ? ", and a shift at most 24 hours" : ""}.</div>}{message && <div className="assumption-message">{message}</div>}</aside></div>;
+}
+
+function ImpactOverview({ impact, onEditAssumptions }: { impact: ImpactReport | null; onEditAssumptions: () => void }) {
+  const production = impact?.production;
+  const atRisk = production?.bottleneck_active && production.contribution_at_risk_inr > 0;
+  const perVehicle = impact?.energy.kwh_per_vehicle ?? null;
+  return <div data-tour="impact-overview" className="impact-overview" title={production?.method}>
+    <div className="overview-grid">
+      <OverviewMetric label="Energy / vehicle" value={perVehicle === null ? "—" : perVehicle.toFixed(1)} suffix={perVehicle === null ? undefined : "kWh"} icon={<Zap size={15} />} />
+      <OverviewMetric label="Value at risk / shift" value={atRisk ? formatInr(production.contribution_at_risk_inr) : "—"} icon={<IndianRupee size={15} />} />
+    </div>
+    <small className="impact-caption">{atRisk ? `${Math.round(production.vehicles_at_risk_per_shift)} vehicles per shift if nothing changes · ` : ""}Assumption-based · synthetic data · <button className="link-action" onClick={onEditAssumptions}>edit assumptions</button></small>
+  </div>;
+}
+
+function SustainabilityCard({ impact }: { impact: ImpactReport | null }) {
+  const energy = impact?.energy;
+  const top = energy?.top_idle_stations[0];
+  return <section data-tour="sustainability-card" className="sustainability-card">
+    <div className="twin-section-title"><span><Leaf size={12}/> Energy &amp; CO₂</span><small>Since reset</small></div>
+    {energy ? <>
+      <div className="sustainability-grid">
+        <Operation label="Idle-energy share" value={`${(energy.idle_energy_share * 100).toFixed(1)}%`} />
+        <div title={`${energy.grid_emission_factor_kg_per_kwh} kg CO₂ per kWh · ${energy.emission_factor_note}`}><Operation label="CO₂ so far" value={`${energy.co2_kg.toFixed(1)} kg`} /></div>
+        <Operation label="Top idle-energy station" value={top ? `${top.station_name} · ${formatKwh(top.idle_kwh, 2)}` : "No idle energy yet"} />
+      </div>
+      {energy.idle_energy_at_risk_kwh_per_shift > 0 && <p className="sustainability-risk">If the bottleneck persists for a shift: about {formatKwh(energy.idle_energy_at_risk_kwh_per_shift)} of extra idle energy ({formatInr(energy.idle_energy_at_risk_inr_per_shift)}) at starved and blocked stations.</p>}
+      <small className="impact-caption">{energy.label} · {formatKwh(energy.total_kwh)} over {Math.round(energy.simulated_seconds / 60)} simulated min</small>
+    </> : <small className="impact-caption">Waiting for the synthetic energy meter…</small>}
+  </section>;
+}
+
+function IncidentImpact({ incident, impact, onEditAssumptions }: { incident: Incident; impact: ImpactReport | null; onEditAssumptions: () => void }) {
+  // Impact describes the line now, so it is shown only while an incident is open.
+  if (!impact || incident.status === "RESOLVED") return null;
+  const { production, quality, energy, assumptions } = impact;
+  return <section data-tour="incident-impact" className="incident-section incident-impact">
+    <span>Impact if nothing changes</span>
+    {incident.type === "PRODUCTION"
+      ? production.bottleneck_active && production.vehicles_at_risk_per_shift > 0
+        ? <div className="incident-evidence">
+            <div><small>Vehicles at risk / shift</small><b>{Math.round(production.vehicles_at_risk_per_shift)}</b><em>{production.baseline_throughput_per_hour?.toFixed(0)} → {production.forecast_throughput_per_hour?.toFixed(0)} veh/h in the {production.horizon_seconds / 60}-min forecast</em></div>
+            <div><small>Contribution at risk / shift</small><b>{formatInr(production.contribution_at_risk_inr)}</b><em>{formatInr(assumptions.contribution_margin_per_vehicle_inr)} per vehicle</em></div>
+            <div><small>Idle energy at risk / shift</small><b>{formatKwh(energy.idle_energy_at_risk_kwh_per_shift)}</b><em>{formatInr(energy.idle_energy_at_risk_inr_per_shift)} at {formatInr(assumptions.electricity_tariff_inr_per_kwh)} per kWh</em></div>
+          </div>
+        : <p className="impact-calm">The current forecast shows no lost output to value. LineLens keeps checking while the incident is open.</p>
+      : <div className="incident-evidence">
+          <div><small>Bodies still catchable in-line</small><b>{quality.catchable_in_line}</b><em>of {quality.exposed_vehicles} flagged vehicles</em></div>
+          <div><small>Rework avoided vs End-of-Line</small><b>{formatInr(quality.potential_rework_avoided_inr)}</b><em>{formatInr(quality.rework_cost_delta_inr)} per body caught in-line</em></div>
+          <div><small>Validated so far</small><b>{quality.validated_rework_avoided_inr === null ? "Awaiting outcomes" : formatInr(quality.validated_rework_avoided_inr)}</b><em>{quality.validated_early_detections === null ? "No End-of-Line outcomes yet" : `${quality.validated_early_detections} warnings confirmed at End-of-Line`}</em></div>
+        </div>}
+    <small className="impact-caption">Assumption-based estimate · <button className="link-action" onClick={onEditAssumptions}>edit assumptions</button></small>
+  </section>;
 }
 
 function LoadingState({ message }: { message: string }) {
@@ -1248,6 +1396,8 @@ function IncidentsView({
   onAction,
   onNote,
   onGuide,
+  impact,
+  onEditAssumptions,
 }: {
   incidents: Incident[];
   selectedIncident: Incident | null;
@@ -1257,6 +1407,8 @@ function IncidentsView({
   onAction: (action: "acknowledge" | "investigate" | "resolve", incident: Incident) => void;
   onNote: (incident: Incident, note: string) => void;
   onGuide: () => void;
+  impact: ImpactReport | null;
+  onEditAssumptions: () => void;
 }) {
   const [note, setNote] = useState("");
   const active = selectedIncident && incidents.some((item) => item.incident_id === selectedIncident.incident_id) ? selectedIncident : incidents[0] ?? null;
@@ -1276,6 +1428,7 @@ function IncidentsView({
           <header className="incident-heading"><div><span>{active.type === "QUALITY" ? "Quality containment" : "Early warning"} · {active.incident_id}</span><h1>{active.title}</h1><small>{active.source} · detected at {clock(active.detected_at)}</small></div><b className={`incident-status ${active.status.toLowerCase()}`}>{active.status}</b></header>
           <section className="incident-section"><span>What happened</span><p>{active.summary}</p></section>
           <section className="incident-section impact"><span>What may happen next</span><p>{active.expected_impact}</p></section>
+          <IncidentImpact incident={active} impact={impact} onEditAssumptions={onEditAssumptions} />
           <section className="incident-section"><span>Why?</span><div className="incident-evidence">{active.evidence.slice(0,3).map((evidence) => <div key={evidence.label}><small>{evidence.label}</small><b>{evidence.value}</b>{evidence.detail && <em>{evidence.detail}</em>}</div>)}</div></section>
           <section className="incident-section"><span>What should we check?</span><ol className="incident-checks">{active.recommended_checks.slice(0,3).map((check) => <li key={check}>{check}</li>)}</ol>{active.recommended_checks.length > 3 && <details className="app-details"><summary>More playbook checks <ChevronDown size={14}/></summary><ol className="incident-checks">{active.recommended_checks.slice(3).map((check) => <li key={check}>{check}</li>)}</ol></details>}</section>
           <section className="incident-section"><span>Affected stations and vehicles</span><div className="incident-scope">{active.affected_assets.map((asset) => <div key={asset.asset_id}><b>{asset.name}</b><small>{asset.area} · {asset.role}</small></div>)}{active.affected_vehicles.map((vehicle) => <div key={vehicle.vehicle_id}><b>{vehicle.vehicle_id} · {Math.round(vehicle.quality_risk * 100)}%</b><small>{vehicle.current_location} · {vehicle.inspection_status.replaceAll("_", " ")}</small></div>)}</div></section>
@@ -1292,7 +1445,7 @@ function IncidentsView({
   );
 }
 
-function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehicle, qualityRecord, genealogy, metrics, scenario, filter, onFilter, incident, onOpenIncident, onGuide }: {
+function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehicle, qualityRecord, genealogy, metrics, scenario, filter, onFilter, incident, onOpenIncident, onGuide, impact, onEditAssumptions }: {
   qualityVehicles: QualityVehicleListItem[];
   selectedVehicle: QualityVehicleListItem | null;
   onSelectVehicle: (vehicle: QualityVehicleListItem | null) => void;
@@ -1305,6 +1458,8 @@ function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehic
   incident: Incident | null;
   onOpenIncident: (incident: Incident | null) => void;
   onGuide: () => void;
+  impact: ImpactReport | null;
+  onEditAssumptions: () => void;
 }) {
   const reviewCount = qualityVehicles.filter((vehicle) => vehicle.risk >= .35).length;
   const inspectCount = qualityVehicles.filter((vehicle) => vehicle.risk >= .6).length;
@@ -1330,7 +1485,7 @@ function SimplifiedQualityView({ qualityVehicles, selectedVehicle, onSelectVehic
       </div> : <div className="quality-empty-detail"><Shield size={32}/><span>QUALITY OVERVIEW</span><p>{reviewCount ? "Select a vehicle to review" : "No vehicle needs extra inspection right now."}</p><small>{qualityVehicles.length ? `LineLens is monitoring ${qualityVehicles.length} active vehicle${qualityVehicles.length === 1 ? "" : "s"}.` : "LineLens is waiting for vehicles to enter the quality workflow."}</small>{qualityVehicles.length > 0 && <button className="calm-action" onClick={() => onFilter("ALL")}>View all monitored vehicles</button>}<div className="quality-calm-points"><div><span>Watching for</span><b>Process drift</b><small>Cycle and tool evidence that moves away from normal.</small></div><div><span>Tracing through</span><b>Build history</b><small>Station, tool, lot, and retained process evidence.</small></div><div><span>Escalating only when</span><b>Evidence warrants review</b><small>Risk supports an inspection priority, not a defect verdict.</small></div></div><small className="calm-note">A calm screen is a result, not a missing result. New quality findings will appear here when evidence warrants attention.</small></div>}
     </section>
     <aside className="quality-right quality-simple-right">
-      <section data-tour="common-pattern" className="genealogy-panel common-pattern-simple"><div className="twin-section-title"><span>Common pattern</span><b className="inferred-tag">{genealogy?.cohort_size ?? 0} risky</b></div>{primaryFactor ? <><p><b>{primaryFactor.support} of {genealogy?.cohort_size} risky vehicles</b> passed through:</p><h2>{primaryFactor.factor_name}</h2>{factors.length > 1 && <div className="also-common"><span>Also common</span>{factors.slice(1,3).map((factor) => <b key={factor.factor_id}>{factor.factor_name}</b>)}</div>}<details className="app-details"><summary>View analysis <ChevronDown size={14}/></summary>{factors.slice(0,4).map((factor) => <div className="analysis-row" key={factor.factor_id}><b>{factor.factor_name}</b><small>{factor.risk_lift.toFixed(1)}× more common · {factor.support}/{genealogy?.cohort_size ?? factor.support} vehicles · baseline {(factor.baseline_prevalence*100).toFixed(1)}%</small></div>)}<small>Patterns indicate where to investigate; they do not prove cause.</small></details></> : <div className="genealogy-empty"><CheckCircle2 size={17}/><span>No shared problem pattern.<small>LineLens continues comparing tools, cells and component lots.</small></span></div>}</section>
+      <section data-tour="common-pattern" className="genealogy-panel common-pattern-simple"><div className="twin-section-title"><span>Common pattern</span><b className="inferred-tag">{genealogy?.cohort_size ?? 0} risky</b></div>{primaryFactor ? <><p><b>{primaryFactor.support} of {genealogy?.cohort_size} risky vehicles</b> passed through:</p><h2>{primaryFactor.factor_name}</h2>{factors.length > 1 && <div className="also-common"><span>Also common</span>{factors.slice(1,4).map((factor) => <b key={factor.factor_id}>{factor.factor_name}</b>)}</div>}{impact?.quality.incident_active && impact.quality.catchable_in_line > 0 && <div className="pattern-impact"><span>Rework avoided if caught in-line</span><b>{formatInr(impact.quality.potential_rework_avoided_inr)}</b><small>{impact.quality.catchable_in_line} flagged bodies still on the line · {formatInr(impact.quality.rework_cost_delta_inr)} each vs End-of-Line · assumption-based · <button className="link-action" onClick={onEditAssumptions}>edit assumptions</button></small></div>}<details className="app-details"><summary>View analysis <ChevronDown size={14}/></summary>{factors.slice(0,4).map((factor) => <div className="analysis-row" key={factor.factor_id}><b>{factor.factor_name}</b><small>{factor.risk_lift.toFixed(1)}× more common · {factor.support}/{genealogy?.cohort_size ?? factor.support} vehicles · baseline {(factor.baseline_prevalence*100).toFixed(1)}%</small></div>)}<small>Patterns indicate where to investigate; they do not prove cause.</small></details></> : <div className="genealogy-empty"><CheckCircle2 size={17}/><span>No shared problem pattern.<small>LineLens continues comparing tools, cells and component lots.</small></span></div>}</section>
       {metrics && <section data-tour="quality-validation" className="quality-metrics validation-simple-card"><div className="twin-section-title"><span>Quality-warning validation</span></div><p className="validation-explainer">Compares earlier LineLens warnings with the later simulated End-of-Line outcome. It is evidence about warning quality, not a factory performance score.</p><div className="validation-primary"><div><small>Warnings with EOL outcome</small><b>{warningsChecked}</b></div><div><small>Confirmed after EOL</small><b>{metrics.precision == null ? "Awaiting outcomes" : `${Math.round(metrics.precision*100)}%`}</b></div><div><small>Earlier than EOL</small><b>{metrics.prediction_lead_time_mean == null ? "Awaiting outcomes" : `${(metrics.prediction_lead_time_mean/60).toFixed(1)} min`}</b></div></div><details className="app-details"><summary>View validation details <ChevronDown size={14}/></summary><p className="validation-detail-note">All values are calculated from completed synthetic inspection outcomes in this session.</p><div className="metrics-grid"><Operation label="Warnings issued" value={metrics.total_predictions.toString()}/><Operation label="Confirmed EOL failure rate" value={`${(metrics.defect_rate*100).toFixed(1)}%`}/><Operation label="Confirmed-warning rate" value={metrics.precision == null ? "—" : `${(metrics.precision*100).toFixed(1)}%`}/><Operation label="Detected-failure rate" value={metrics.recall == null ? "—" : `${(metrics.recall*100).toFixed(1)}%`}/></div></details></section>}
     </aside>
   </section>;
@@ -1560,7 +1715,7 @@ function QualityView({
 function BuildRecord({ record, currentStation }: { record: VehicleQualityRecord; currentStation: string }) {
   const threadSteps = (record as VehicleQualityRecord & { build_record?: VehicleThread["completed_steps"] }).build_record ?? [];
   const warning = (record.current_prediction?.risk ?? 0) >= .35;
-  return <section data-tour="digital-build-record" className="build-record build-history-simple"><div className="twin-section-title"><span>Build history</span><small>Saved for this vehicle</small></div><div className="build-story">{threadSteps.map((step) => <div key={`${step.station_id}-${step.exit_time}`} className={warning && step.station_id === "BIW-02" ? "pattern" : "done"}>{warning && step.station_id === "BIW-02" ? <CircleAlert size={15}/> : <CheckCircle2 size={15}/>}<span><b>{step.station_name}</b><small>{warning && step.station_id === "BIW-02" ? "Pattern found" : "Complete"}</small></span></div>)}<div className="current"><i/><span><b>{currentStation}</b><small>Current</small></span></div></div><details className="app-details"><summary>Build details <ChevronDown size={14}/></summary><div className="build-steps technical-build">{threadSteps.map((step) => <details key={`${step.station_id}-${step.exit_time}`}><summary><CheckCircle2 size={15}/><span><b>{step.station_name}</b><small>{step.cycle_time.toFixed(1)} s · {step.equipment_id}</small></span><ChevronDown size={14}/></summary>{Object.keys(step.metadata).length > 0 && <div className="step-evidence">{Object.entries(step.metadata).filter(([key]) => ["fixture","robot_cell","weld_gun","electrode_cap_lot","weld_energy_deviation","weld_variance_multiplier","twin_confidence"].includes(key)).map(([key,value]) => <small key={key}><span>{key.replaceAll("_"," ")}</span><b>{typeof value === "number" && key.includes("deviation") ? `${value >= 0 ? "+" : ""}${(value*100).toFixed(1)}%` : String(value)}</b></small>)}</div>}</details>)}</div></details></section>
+  return <section data-tour="digital-build-record" className="build-record build-history-simple"><div className="twin-section-title"><span>Build history</span><small>Saved for this vehicle</small></div><div className="build-story">{threadSteps.map((step) => <div key={`${step.station_id}-${step.exit_time}`} className={warning && step.station_id === "BIW-02" ? "pattern" : "done"}>{warning && step.station_id === "BIW-02" ? <CircleAlert size={15}/> : <CheckCircle2 size={15}/>}<span><b>{step.station_name}</b><small>{warning && step.station_id === "BIW-02" ? "Pattern found" : "Complete"}</small></span></div>)}<div className="current"><i/><span><b>{currentStation}</b><small>Current</small></span></div></div><details className="app-details"><summary>Build details <ChevronDown size={14}/></summary><div className="build-steps technical-build">{threadSteps.map((step) => <details key={`${step.station_id}-${step.exit_time}`}><summary><CheckCircle2 size={15}/><span><b>{step.station_name}</b><small>{step.cycle_time.toFixed(1)} s · {step.equipment_id}</small></span><ChevronDown size={14}/></summary>{Object.keys(step.metadata).length > 0 && <div className="step-evidence">{Object.entries(step.metadata).filter(([key]) => ["fixture","robot_cell","weld_gun","electrode_cap_lot","consumable_supplier","weld_energy_deviation","weld_variance_multiplier","twin_confidence"].includes(key)).map(([key,value]) => <small key={key}><span>{key.replaceAll("_"," ")}</span><b>{typeof value === "number" && key.includes("deviation") ? `${value >= 0 ? "+" : ""}${(value*100).toFixed(1)}%` : String(value)}</b></small>)}</div>}</details>)}</div></details></section>
 }
 
 function RightPanel({
@@ -1577,6 +1732,8 @@ function RightPanel({
   incident,
   vehicleIncident,
   onOpenIncident,
+  impact,
+  onEditAssumptions,
 }: {
   state: TwinState;
   selected: Station;
@@ -1594,6 +1751,8 @@ function RightPanel({
   incident: Incident | null;
   vehicleIncident: Incident | null;
   onOpenIncident: (incident: Incident | null) => void;
+  impact: ImpactReport | null;
+  onEditAssumptions: () => void;
 }) {
   return (
     <aside className="right-sidebar">
@@ -1628,6 +1787,7 @@ function RightPanel({
             icon={<Crosshair size={15} />}
           />
         </div>
+        <ImpactOverview impact={impact} onEditAssumptions={onEditAssumptions} />
       </section>
       {vehicle ? (
         <VehicleInspector vehicle={vehicle} thread={vehicleThread} incident={vehicleIncident} onOpenIncident={onOpenIncident} />
@@ -1641,6 +1801,7 @@ function RightPanel({
           onOpenIncident={onOpenIncident}
         />
       )}
+      <SustainabilityCard impact={impact} />
     </aside>
   );
 }

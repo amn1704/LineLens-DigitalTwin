@@ -69,6 +69,23 @@ class TestPhase4EndToEnd:
             if item["inspection_result"]["result"].startswith("FAIL"):
                 assert item["prediction_history"][-1]["prediction_timestamp"] < item["inspection_result"]["inspection_timestamp"]
 
+    def test_weld_drift_demo_genealogy_traces_tier2_supplier(self):
+        simulator = AssemblyLineSimulator()
+        simulator.pause()
+        try:
+            simulator.set_weld_drift(True)
+            simulator.advance_demo(1800)
+            factors = simulator.quality_genealogy()["common_factors"]
+            supplier = next((factor for factor in factors if factor["factor_id"] == "SUP-T2-03"), None)
+            assert supplier is not None
+            assert supplier["factor_type"] == "supplier"
+            assert supplier["factor_name"] == "Supplier SUP-T2-03 (Tier-2, synthetic)"
+            # The supplier rides along with its cap lot; it does not displace the weld gun lead.
+            assert factors[0]["factor_id"] == "WG-04"
+            assert supplier["risk_lift"] == next(factor for factor in factors if factor["factor_id"] == "EC-17")["risk_lift"]
+        finally:
+            simulator.shutdown()
+
     def test_healthy_run_has_no_inspection_cohort_or_genealogy(self):
         simulator = AssemblyLineSimulator()
         simulator.pause()

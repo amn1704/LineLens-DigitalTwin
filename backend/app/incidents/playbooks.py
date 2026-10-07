@@ -33,6 +33,7 @@ PLAYBOOKS: dict[IncidentType, IncidentPlaybook] = {
         checks=(
             "Inspect the suspected weld gun.",
             "Check electrode-cap condition.",
+            "Raise a supplier quality alert for the suspected consumable lot and hold remaining stock pending inspection.",
             "Review the exposed vehicle group.",
             "Send eligible bodies to Body Shop Exit geometry inspection.",
             "Stop using the suspected tool only if engineering inspection confirms the problem.",

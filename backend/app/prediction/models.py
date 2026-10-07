@@ -115,6 +115,8 @@ class OutcomeMetrics(BaseModel):
     blocked_time_seconds: float
     starved_time_seconds: float
     accumulator_peak: dict[str, int]
+    station_blocked_seconds: dict[str, float] = Field(default_factory=dict)
+    station_starved_seconds: dict[str, float] = Field(default_factory=dict)
 
 
 class ForwardResult(BaseModel):

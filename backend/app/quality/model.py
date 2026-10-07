@@ -26,8 +26,8 @@ class QualityModel:
     """Small, deterministic and interpretable synthetic quality classifier."""
 
     MODEL_VERSION = "quality-logreg-v1"
-    MODEL_PATH = Path("backend/app/quality/quality_model.pkl")
-    SCALER_PATH = Path("backend/app/quality/quality_scaler.pkl")
+    MODEL_PATH = Path(__file__).with_name("quality_model.pkl")
+    SCALER_PATH = Path(__file__).with_name("quality_scaler.pkl")
     ARTIFACT_PATH = Path(__file__).with_name("quality_model_artifact.json")
     FEATURE_NAMES = (
         "weld_energy_deviation", "weld_variance_multiplier", "avg_cycle_deviation",

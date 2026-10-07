@@ -58,7 +58,7 @@ class GenealogyAnalyzer:
             # compare the weld genealogy fields rather than allowing unrelated
             # downstream batch coincidence to outrank the implicated process.
             if weld_hypothesis and not (
-                factor_info["type"] in {"robot_cell", "consumable_lot"}
+                factor_info["type"] in {"robot_cell", "consumable_lot", "supplier"}
                 or (factor_info["type"] == "tool" and str(factor_info["id"]).startswith("WG-"))
             ):
                 continue
@@ -163,7 +163,16 @@ class GenealogyAnalyzer:
                         "id": metadata["electrode_cap_lot"],
                         "name": f"Electrode Cap Lot {metadata['electrode_cap_lot']}",
                     }
-                
+
+                if "consumable_supplier" in metadata:
+                    key = f"supplier:{metadata['consumable_supplier']}"
+                    factors[key] = {
+                        "count": factors[key]["count"] + 1,
+                        "type": "supplier",
+                        "id": metadata["consumable_supplier"],
+                        "name": f"Supplier {metadata['consumable_supplier']} (Tier-2, synthetic)",
+                    }
+
                 if "fixture" in metadata:
                     key = f"fixture:{metadata['fixture']}"
                     factors[key] = {
@@ -202,11 +211,11 @@ class GenealogyAnalyzer:
         # Count factor types
         type_counts = Counter(fa.factor_type for fa in factor_analyses[:5])
         
-        # Robot-cell and weld-gun metadata are both evidence of the Robotic Weld
-        # process; factor type labels need not literally contain "weld".
+        # Robot-cell, weld-gun and consumable metadata are all evidence of the
+        # Robotic Weld process; factor type labels need not literally contain "weld".
         weld_related = sum(
             count for type_name, count in type_counts.items()
-            if type_name in {"tool", "robot_cell", "consumable_lot"}
+            if type_name in {"tool", "robot_cell", "consumable_lot", "supplier"}
         )
         
         if weld_related >= 2:

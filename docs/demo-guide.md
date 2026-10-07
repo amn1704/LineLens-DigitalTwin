@@ -18,6 +18,14 @@ Choose **Weld quality issue** in Demo scenarios. Quality will show the risky veh
 
 Choose **Sensor loss** and inspect Trim Station. The view makes the reduced direct evidence and confidence visible while the Twin remains an estimate rather than pretending data is available.
 
+## Pitch demo (three minutes)
+
+Press **Pitch demo** in the top bar. It resets the synthetic line and runs nine short steps through the real Bottleneck and Weld quality scenarios: the line, the developing bottleneck, why it was flagged, what happens if nothing changes (vehicles and ₹ at risk), the incident with its impact and playbook, the greener-line energy card, the early quality warning, the common pattern down to the Tier-2 supplier, and validation. Step text is kept to 25 words or fewer so a presenter can narrate over it. See [the pitch script](hackathon/PITCH-SCRIPT.md).
+
+## Impact assumptions
+
+Open **More → Impact assumptions** to change the shift length, contribution margin, rework costs, tariff, and grid emission factor. Every ₹ and CO₂ figure updates on the next refresh. **Restore illustrative defaults** puts the placeholders back. When presenting, say clearly that the defaults are placeholders, not plant figures.
+
 ## Learning
 
 Open **Help** for the complete five-minute product tour, or use **Guide this page** in a workspace for a short focused explanation.

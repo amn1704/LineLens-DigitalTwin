@@ -208,6 +208,8 @@ class ForwardTwinSimulator:
             blocked_time_seconds=round(sum(state.blocked_time for state in states), 1),
             starved_time_seconds=round(sum(state.starved_time for state in states), 1),
             accumulator_peak=accumulator_peak,
+            station_blocked_seconds={spec.id: round(states[index].blocked_time, 1) for index, spec in enumerate(specs)},
+            station_starved_seconds={spec.id: round(states[index].starved_time, 1) for index, spec in enumerate(specs)},
         )
         return ForwardResult(
             snapshot_time=snapshot.simulation_time, source_station_id=source_station_id,

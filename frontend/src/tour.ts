@@ -33,6 +33,25 @@ export const TOUR_STEPS: readonly TourStep[] = [
   step("trust", "Analytics", "validation-summary", "Trust and finish", "Predictions are checked against later simulated outcomes. Wrong predictions are not hidden. You now know the LineLens story: see now, predict next, trace affected vehicles and respond with evidence.", { validation: true }),
 ] as const;
 
+export type TourKind = "full" | "pitch";
+
+// A three-minute presenter story over the same real scenario mechanics as the full
+// tour. Text stays short so a presenter can narrate over it. The greener-line step
+// follows the incident so the energy card is read while the bottleneck is still live.
+export const PITCH_STEPS: readonly TourStep[] = [
+  step("pitch-line", "Dashboard", "factory-canvas", "The line", "11 stations, three shops, mixed sensor maturity. LineLens keeps a live, explainable twin of this synthetic line."),
+  step("pitch-bottleneck", "Dashboard", "station-inspector", "A developing bottleneck", "Chassis Marriage starts drifting slower. LineLens runs the real simulator and flags it before the queue becomes obvious.", { stationId: "FA-02", scenario: "bottleneck", dataView: "twin" }),
+  step("pitch-why", "Dashboard", "station-inspector", "Why it was flagged", "Current cycle against normal, a growing difference and the queue: a persistent pattern, not one slow cycle.", { stationId: "FA-02", dataView: "twin" }),
+  step("pitch-impact", "Dashboard", "impact-overview", "What happens if nothing changes", "From the no-intervention forecast: vehicles per shift and contribution at risk. Assumption-based estimates you can edit.", { stationId: "FA-02", dataView: "forecast" }),
+  step("pitch-action", "Incidents", "incident-impact", "From warning to action", "The warning becomes an incident with its impact and a playbook. Supervisors decide; LineLens never controls the line."),
+  step("pitch-green", "Dashboard", "sustainability-card", "Greener line", "Starved and blocked stations still draw power, the curing oven most of all. LineLens puts kWh, ₹ and CO₂ beside every bottleneck.", { stationId: "FA-02", dataView: "twin" }),
+  step("pitch-quality", "Quality", "quality-primary", "Quality early warning", "Weld quality drift. This body was flagged right after the weld cell, long before End-of-Line inspection would catch it.", { scenario: "quality", qualityFilter: "INSPECT" }),
+  step("pitch-pattern", "Quality", "common-pattern", "The root cause lead", "Risky bodies share one weld gun, electrode-cap lot and Tier-2 supplier. Catching them in-line avoids costlier End-of-Line rework.", { qualityFilter: "INSPECT" }),
+  step("pitch-trust", "Quality", "validation-summary", "Trust", "We check our own predictions. Every warning is compared with the later simulated outcome, including false alarms.", { validation: true }),
+] as const;
+
+export const tourSteps = (kind: TourKind): readonly TourStep[] => kind === "pitch" ? PITCH_STEPS : TOUR_STEPS;
+
 export const GUIDE_CHAPTERS: readonly GuideChapter[] = [
   {
     id: "dashboard", label: "Dashboard", page: "Dashboard", duration: "~3 min", summary: "Read the factory, inspect a station, and understand early warning.", steps: [
@@ -97,7 +116,7 @@ export const GUIDE_CHAPTERS: readonly GuideChapter[] = [
 
 export interface TourProgress { step: number; complete: boolean; }
 export const newTour = (): TourProgress => ({ step: 0, complete: false });
-export const nextTourStep = (p: TourProgress): TourProgress => p.step >= TOUR_STEPS.length - 1 ? { step: p.step, complete: true } : { step: p.step + 1, complete: false };
+export const nextTourStep = (p: TourProgress, steps: readonly TourStep[] = TOUR_STEPS): TourProgress => p.step >= steps.length - 1 ? { step: p.step, complete: true } : { step: p.step + 1, complete: false };
 export const previousTourStep = (p: TourProgress): TourProgress => ({ step: Math.max(0, p.step - 1), complete: false });
 export const hasSeenTour = (s: Pick<Storage, "getItem">) => s.getItem(TOUR_STORAGE_KEY) === "1";
 export const rememberTour = (s: Pick<Storage, "setItem">) => s.setItem(TOUR_STORAGE_KEY, "1");

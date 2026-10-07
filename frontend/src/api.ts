@@ -1,5 +1,7 @@
 import type {
   GenealogyAnalysis,
+  ImpactAssumptions,
+  ImpactReport,
   PredictionState,
   QualityMetrics,
   QualityScenario,
@@ -94,4 +96,15 @@ export const addIncidentNote = (incidentId: string, note: string) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ note }),
+  });
+
+export const getImpact = () => request<ImpactReport>("/api/impact");
+export const getImpactAssumptions = () =>
+  request<ImpactAssumptions>("/api/impact/assumptions");
+// PUT replaces the whole set; an empty object restores the illustrative defaults.
+export const updateImpactAssumptions = (assumptions: Partial<ImpactAssumptions>) =>
+  request<ImpactAssumptions>("/api/impact/assumptions", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(assumptions),
   });

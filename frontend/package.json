@@ -4,12 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=20"
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
-    "test:tour": "node --test tests/tour.test.mjs"
+    "test:tour": "node --experimental-strip-types --test tests/tour.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.3",

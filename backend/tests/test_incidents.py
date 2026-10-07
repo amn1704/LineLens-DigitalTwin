@@ -117,3 +117,12 @@ def test_workflow_transitions_timestamps_history_and_no_machine_control():
         assert reopened.status != IncidentStatus.RESOLVED
     finally:
         simulator.shutdown()
+
+
+def test_quality_playbook_raises_supplier_alert_and_keeps_tool_checks():
+    from backend.app.incidents.playbooks import PLAYBOOKS
+
+    checks = PLAYBOOKS[IncidentType.QUALITY].checks
+    assert "Raise a supplier quality alert for the suspected consumable lot and hold remaining stock pending inspection." in checks
+    assert any("electrode-cap" in check.lower() for check in checks)
+    assert any("weld gun" in check.lower() for check in checks)

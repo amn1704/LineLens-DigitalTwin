@@ -29,6 +29,7 @@ from .models import (
     VehicleStatus,
 )
 from .quality import QualityService
+from .sustainability import EnergyMeter, EnergyReading
 from .twin.estimator import StationDefinition, TwinStateEstimator
 
 
@@ -92,6 +93,10 @@ CONNECTIONS = [
 ]
 
 VARIANTS = (("Sedan", "#4f85a6", 1.0), ("SUV", "#596b7f", 1.04), ("EV", "#2f9aa3", 1.035))
+
+# Synthetic Tier-2 suppliers of the electrode-cap consumable, retained in the
+# vehicle genealogy so a shared lot can be traced back to its supplier.
+CAP_LOT_SUPPLIERS = {"EC-17": "SUP-T2-03", "EC-18": "SUP-T2-05", "EC-19": "SUP-T2-07"}
 
 
 @dataclass
@@ -185,6 +190,7 @@ class AssemblyLineSimulator:
             self._electrode_cap_lot: str = "EC-17"  # Default electrode cap lot
             self._latest_observations: dict[str, StationObservation] = {}
             self._current_observations: dict[str, StationObservation] = {}
+            self._energy = EnergyMeter([spec.station_id for spec in SPECS])
             self._estimator = TwinStateEstimator([
                 StationDefinition(spec.station_id, spec.sensor_mode, spec.nominal_cycle) for spec in SPECS
             ])
@@ -405,6 +411,7 @@ class AssemblyLineSimulator:
         if delta <= 0:
             return
         self._simulation_time += delta
+        self._meter_energy(delta)
         self._complete_transfers()
         self._ensure_entry_buffer()
         for index, station in enumerate(self._stations):
@@ -419,6 +426,12 @@ class AssemblyLineSimulator:
         self._update_station_states()
         self._assimilate_observations()
         self._record_history()
+
+    def _meter_energy(self, delta: float) -> None:
+        """Synthetic sub-metering: each station drew power in the state it held this tick."""
+        for station in self._stations:
+            self._energy.accumulate(station.spec.station_id, station.operational_state, delta)
+        self._energy.advance_clock(delta)
 
     def _finish_or_block(self, station_index: int) -> None:
         station = self._stations[station_index]
@@ -438,6 +451,7 @@ class AssemblyLineSimulator:
             station.current_cycle = 0.0
             station.vehicles_completed += 1
             self._completion_times.append(self._simulation_time)
+            self._energy.record_completion()
             vehicle.status = VehicleStatus.COMPLETED
             vehicle.current_index = station_index
             vehicle.next_index = None
@@ -480,6 +494,7 @@ class AssemblyLineSimulator:
                 "robot_cell": robot_cell,
                 "weld_gun": weld_gun,
                 "electrode_cap_lot": cap_lot,
+                "consumable_supplier": CAP_LOT_SUPPLIERS[cap_lot],
                 "weld_program": "SPOT-A17"
             }),
             "BIW-03": ("UB-JIG-03", {"joining_fixture": "UB-JIG-03"}),
@@ -1061,6 +1076,10 @@ class AssemblyLineSimulator:
     def quality_metrics(self) -> dict:
         with self._lock:
             return self._quality_service.get_quality_metrics()
+
+    def energy(self) -> EnergyReading:
+        with self._lock:
+            return self._energy.reading()
 
     def vehicle_thread(self, vehicle_id: str) -> VehicleThread | None:
         with self._lock:
